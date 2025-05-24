@@ -1,3 +1,17 @@
+# Environment variables
 .env
+
+# Frontend
 frontend/node_modules
-data/*
+
+# Data
+data/resume/*
+data/jd/*
+data/company_infos/*
+
+# Editor directories and files
+.vscode/*
+
+# Python
+rag_agent/**/__pycache__/
+*.py[cod]
