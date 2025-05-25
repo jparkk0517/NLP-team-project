@@ -170,6 +170,11 @@ def get_company_info():
             status_code=400,
             detail="Company documents not uploaded. Please upload docs first.",
         )
+    if stored_jd is None:
+        raise HTTPException(
+            status_code=400,
+            detail="JD not uploaded. Please upload JD first.",
+        )
     # 회사 자료 검색
     retrieved = vectorstore.similarity_search(stored_jd, k=3)
     company_info = "\n".join([doc.page_content for doc in retrieved])
@@ -241,4 +246,9 @@ async def generate_followup():
 app.mount("/", StaticFiles(directory=dist_path, html=True), name="frontend")
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "app:app",
+        host="127.0.0.1",  # localhost 대신 IP 주소 사용
+        port=8000,
+        reload=False  # 개발 모드 비활성화
+    )
