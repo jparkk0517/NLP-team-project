@@ -15,3 +15,4 @@ data/company_infos/*
 # Python
 rag_agent/**/__pycache__/
 *.py[cod]
+rag_agent/vectorstore/**
