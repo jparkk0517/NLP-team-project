@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Interview Simulator")
-dist_path = os.path.join(os.path.dirname(__file__), "../frontend/dist")
+dist_path = os.path.join(os.path.dirname(__file__), "frontend/dist")
 
 # 메모리 컨텍스트 저장 변수
 stored_resume: Optional[str] = None
@@ -36,7 +36,8 @@ base_chain_inputs: Optional[dict] = None
 vectorstore: Optional[Chroma] = None
 # 영속 디렉토리 설정 (환경변수 또는 기본 경로)
 persist_directory = os.getenv(
-    "CHROMA_DB_PATH", os.path.join(os.path.dirname(__file__), "vectorstore/chroma_db")
+    "CHROMA_DB_PATH",
+    os.path.join(os.path.dirname(__file__), "rag_agent/vectorstore/chroma_db"),
 )
 
 
@@ -103,7 +104,7 @@ async def init_local_data():
 async def load_local_data():
     await init_local_data()
     global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history
-    base_dir = os.path.join(os.path.dirname(__file__), "../data")
+    base_dir = os.path.join(os.path.dirname(__file__), "data")
     # 이력서 로딩
     resume_dir = os.path.join(base_dir, "resume")
     for fname in os.listdir(resume_dir):
