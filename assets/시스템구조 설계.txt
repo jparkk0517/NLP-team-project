@@ -1,0 +1,16 @@
+사용자 ↔️ 프론트엔드 ↔️ RAG 백엔드 ↔️ 벡터DB / LLM
+                              ↕
+                        문서 분할 / 임베딩
+
+📁 frontend (React)
+📁 backend
+    └ 📁 rag_agent
+        ├ app.py (FastAPI)
+        ├ chains/
+        │   ├ interview_chain.py
+        │   ├ evaluate_chain.py
+        │   └ followup_chain.py
+        ├ data/
+        │   └ resume_jd_docs/
+        └ vectorstore/
+            └ chroma_db/
