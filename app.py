@@ -42,28 +42,37 @@ persist_directory = os.getenv(
 
 
 class ChatHistory(BaseModel):
-    """question, answer 쌍을 저장하는 클래스
+    """
+    question, answer 쌍을 저장하는 클래스
     질문-답변 쌍으로 저장이 되어야하고
     질문-답변 쌍을 추가하는 메서드와
     질문-답변 쌍을 반환하는 메서드가 있어야한다.
     모든 질문-답변 쌍을 반환하는 메서드가 있어야 한다.
     """
-
+    # list[dict[id, question]]
     question_history: list[dict[str, str]] = Field(default_factory=list)
     answer_history: list[dict[str, str]] = Field(default_factory=list)
+
+    
 
     def add_question(self, question: str):
         self.question_history.append(
             {"question_id": len(self.question_history), "question": question}
         )
+        
+        
         return self.question_history[-1]["question_id"]
 
     def add_answer(self, question_id: str, answer: str):
         self.answer_history.append({"question_id": question_id, "answer": answer})
+        
+        
         return self.answer_history[-1]["question_id"]
 
     def get_all_history(self) -> list[dict[str, str]]:
         """List[{question, answer}]"""
+        
+        
         return [
             {"question": q["question"], "answer": a["answer"]}
             for q, a in zip(self.question_history, self.answer_history)
@@ -140,7 +149,7 @@ async def load_local_data():
     base_chain_inputs = {
         "resume": stored_resume,
         "jd": stored_jd,
-        "company_info": stored_company_info,
+        "company_infos": stored_company_info,
     }
     logger.info("Precomputed company_info and initialized chains.")
 

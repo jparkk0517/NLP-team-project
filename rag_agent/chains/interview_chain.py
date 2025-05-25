@@ -39,26 +39,34 @@ def get_interview_chain():
 
     # 프롬프트 템플릿 (회사 자료 포함)
     prompt = PromptTemplate(
-        input_variables=["resume", "jd", "company_info"],
+        input_variables=["resume", "jd", "company_infos"],
         template="""
         역할:
-        당신은 이 회사에 대해 잘 알고 있는 면접관입니다. 
-        아래 주어진 회사 자료들을 탐독하여 회사가 지향하는 핵심가치, 문화, 비전을 파악하고 여기서 지향하는 가치와 방향성을 근본으로 하여 질문을 해야 합니다.
+        당신은 면접관입니다. 지원자의 답변을 듣고 다음 질문을 생성해야 합니다.
+        지원자가 답변한 내용이 처음 질의에 적합한 답변인지 철저하게 판단하고, 그 판단에 의거해서 후속질문을 만들어야 한다.
+
+        상황:
+        당신이 보고있는 화면에는 지원자가 지원한 직무 JD, 지원자의 RESUME 등이 있는 상황입니다.
+        이 면접자가 해당 직무의 담당자로 입사해서 충분한 역할을 하고, 회사와 함께 성장할 수 있는지 판단하기 위해 지원자를 검증해야합니다.
+        
 
         회사 자료:
-        {company_info}
+        {company_infos}
 
         chain of thought:
-        면접관인 당신은 아래 지원자의 RESUME와 JD를 보고 이 회사가 지원자에게 검증하고자 하는 핵심적인 내용인 무엇인지 파악한다.
-        파악한 내용을 바탕으로 지원자의 자질을 판단할 수 있는 질문을 생성한다.
+        지원자를 검증하기 위해 이력서,JD를 파악해서 질문을 생성/응답 평가를 해야한다.
+        아래 제시되는 이력서, 직무를 기반으로 면접질문을 이전에 제시하였고, 당신은 이 딥변을 듣고 이 질문에 대하여 followup하는 꼬리질문을 생성해야 한다.
+        꼬리질문은 이 기업이 지원자에게 검증하고자 하는 핵심적인 포인트를 파악하기위한 목적이다.
+        꼬리질문은 반드시 지원자의 답변에 대한 후속질문이어야 한다.
+
 
         이력서:
         {resume}
 
         직무 설명:
         {jd}
-
-        면접 질문 하나만 생성하세요:
+        
+        질문을 하나만 생성한다:
         """,
     )
     logger.info("Prompt template created")
@@ -87,7 +95,7 @@ def get_followup_chain():
 
     # 프롬프트 템플릿
     prompt = PromptTemplate(
-        input_variables=["resume", "jd", "company_info", "question", "user_answer"],
+        input_variables=["resume", "jd", "company_infos", "question", "user_answer"],
         template="""
         역할:
         당신은 면접관입니다. 지원자의 답변을 듣고 다음 질문을 생성해야 합니다.
@@ -99,7 +107,7 @@ def get_followup_chain():
         
 
         회사 자료:
-        {company_info}
+        {company_infos}
 
         chain of thought:
         지원자를 검증하기 위해 이력서,JD를 파악해서 질문을 생성/응답 평가를 해야한다.
