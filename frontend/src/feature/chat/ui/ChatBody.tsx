@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import Message from '../../../entity/chat/ui/Message';
 import type { ChatHistoryDTO } from '../../../shared/type';
 import { useRef, useEffect } from 'react';
+import useFrontStore from '../../../shared/frontStore';
 
 const randomMockDataGenerator = () => {
   return Array(Math.floor(Math.random() * 100) + 1)
@@ -20,16 +21,23 @@ const randomMockDataGenerator = () => {
     }) as ChatHistoryDTO[];
 };
 const useChatHistory = () => {
-  return useQuery({
+  const res = useQuery({
     queryKey: ['chatHistory'],
     queryFn: () => {
       return Promise.resolve(randomMockDataGenerator());
     },
   });
+  const { setIsLastMessageAnswer } = useFrontStore();
+  useEffect(() => {
+    const isLastMessageAnswer =
+      res.data?.[res.data.length - 1]?.type === 'answer';
+    setIsLastMessageAnswer(isLastMessageAnswer);
+  }, [res.data, setIsLastMessageAnswer]);
+  return { ...res };
 };
 
 const ChatBody = () => {
-  const { data, refetch } = useChatHistory();
+  const { data } = useChatHistory();
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -41,15 +49,10 @@ const ChatBody = () => {
   }, [data]);
 
   return (
-    <div className='flex-1 flex flex-col justify-center items-center h-[85%] border-b-2 border-gray-300 overflow-scroll p-4'>
+    <div className='flex flex-col justify-center items-center h-[85%] border-b-2 border-gray-300 overflow-scroll'>
       {data?.map((message) => (
         <Message {...message} key={message.id} />
       ))}
-      <button
-        onClick={() => refetch()}
-        className='hover:bg-blue-600 transition-all duration-300 bg-blue-500 text-white px-4 py-2 rounded-md absolute bottom-20 right-10 h-20 w-20 rounded-full'>
-        refresh
-      </button>
       <div ref={chatEndRef} />
     </div>
   );
