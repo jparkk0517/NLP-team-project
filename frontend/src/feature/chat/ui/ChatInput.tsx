@@ -34,7 +34,7 @@ const ChatInput = () => {
     }
   }, [inputable]);
   return (
-    <form className='h-[15%] p-4 flex flex-row' onSubmit={handleSubmit}>
+    <form className='max-h-[100px] p-4 flex flex-row' onSubmit={handleSubmit}>
       <TextArea
         ref={textRef}
         placeholder={inputable ? 'Action을 선택해주세요' : '메시지 입력'}
