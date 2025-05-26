@@ -4,7 +4,10 @@ import Button from '../../../shared/Button';
 
 const UserIcon = ({ speaker }: { speaker: SpeakerType }) => {
   return (
-    <span className='text-gray-500 rounded-full bg-gray-200 p-2 w-20 h-20 flex items-center justify-center m-2'>
+    <span
+      className={`text-black rounded-full p-2 w-20 h-20 flex items-center justify-center m-2
+      ${speaker === 'agent' ? 'bg-yellow-300' : 'bg-green-300'}
+      `}>
       {speaker}
     </span>
   );
@@ -12,7 +15,9 @@ const UserIcon = ({ speaker }: { speaker: SpeakerType }) => {
 
 const Content = ({ content }: { content: string }) => {
   return (
-    <span className='text-gray-500 rounded-md bg-gray-200 p-2'>{content}</span>
+    <span className='text-gray-500 rounded-md bg-gray-200 p-2 max-w-[70%]'>
+      {content}
+    </span>
   );
 };
 
