@@ -44,7 +44,7 @@ const ChatInput = () => {
         className='w-[90%] h-full border-2 border-gray-300 rounded-md p-2'
         disabled={!inputable}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === 'Enter' && e.shiftKey) {
             e.preventDefault();
             handleSubmit();
           }
