@@ -5,12 +5,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useChat } from '../hook/useChat';
 import TextArea from '../../../shared/TextArea';
 import { useState } from 'react';
+import { useRef } from 'react';
+import { useEffect } from 'react';
 
 const ChatInput = () => {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState('');
   const { mutateAsync: chat, isPending } = useChat();
-
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const handleSubmit = useCallback(
     async (e?: React.FormEvent<HTMLFormElement>) => {
       e?.preventDefault();
@@ -25,9 +27,16 @@ const ChatInput = () => {
     [chat, message, queryClient]
   );
   const { inputable } = useFrontStore();
+
+  useEffect(() => {
+    if (inputable) {
+      textRef.current?.focus();
+    }
+  }, [inputable]);
   return (
     <form className='h-[15%] p-4 flex flex-row' onSubmit={handleSubmit}>
       <TextArea
+        ref={textRef}
         placeholder={inputable ? 'Action을 선택해주세요' : '메시지 입력'}
         value={message}
         onChange={(e) => setMessage(e.target.value)}

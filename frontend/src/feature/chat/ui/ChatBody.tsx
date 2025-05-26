@@ -2,7 +2,6 @@ import Message from '../../../entity/chat/ui/Message';
 import { useRef, useEffect } from 'react';
 import { useMemo } from 'react';
 import { useChatHistory, useRequest } from '../hook/useChat';
-import { debounce } from '../../../shared/utils';
 import { useCallback } from 'react';
 
 const ChatBody = () => {
@@ -15,16 +14,13 @@ const ChatBody = () => {
     return data?.map((message) => <Message {...message} key={message.id} />);
   }, [data]);
 
-  const firstQuestionDebounce = useCallback(
-    debounce(() => {
-      if (!isFirst.current) return;
-      isFirst.current = false;
-      nextQuestion().then(() => {
-        refetch();
-      });
-    }, 10),
-    [nextQuestion, refetch]
-  );
+  const firstQuestionDebounce = useCallback(() => {
+    if (!isFirst.current) return;
+    isFirst.current = false;
+    nextQuestion().then(() => {
+      refetch();
+    });
+  }, [nextQuestion, refetch]);
   useEffect(() => {
     if (data?.length === 0 && !isFetching) {
       return firstQuestionDebounce();
