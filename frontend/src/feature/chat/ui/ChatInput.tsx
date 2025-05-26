@@ -26,7 +26,7 @@ const ChatInput = () => {
   );
   const { inputable } = useFrontStore();
   return (
-    <form className='h-[10%] p-4 flex flex-row' onSubmit={handleSubmit}>
+    <form className='h-[15%] p-4 flex flex-row' onSubmit={handleSubmit}>
       <TextArea
         placeholder={inputable ? 'Action을 선택해주세요' : '메시지 입력'}
         value={message}

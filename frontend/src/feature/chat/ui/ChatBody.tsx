@@ -37,7 +37,7 @@ const ChatBody = () => {
     }
   }, [data, firstQuestionDebounce, isFetching]);
   return (
-    <div className='flex flex-col h-[85%] border-b-2 border-gray-300 overflow-scroll'>
+    <div className='flex flex-col h-[80%] border-b-2 border-gray-300 overflow-scroll'>
       {messages}
       <div ref={chatEndRef} />
     </div>

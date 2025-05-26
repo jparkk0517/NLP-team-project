@@ -4,7 +4,7 @@ import ChatInput from '../feature/chat/ui/ChatInput';
 
 const ChatPage = () => {
   return (
-    <div className='flex flex-col h-screen w-screen min-w-[450px] min-h-[600px] overflow-scroll'>
+    <div className='flex flex-col h-screen w-screen overflow-scroll'>
       <ChatHeader />
       <ChatBody />
       <ChatInput />

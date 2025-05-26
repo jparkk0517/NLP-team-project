@@ -7,7 +7,7 @@ const UserIcon = () => {
   return (
     <div className=''>
       <span
-        className={`text-black rounded-full p-2 w-20 h-20 flex items-center justify-center m-2 bg-green-300`}>
+        className={`text-black rounded-full p-2 w-[50px] h-[50px] flex items-center justify-center m-2 bg-green-300`}>
         User
       </span>
     </div>
@@ -18,7 +18,7 @@ const AgentIcon = () => {
   return (
     <div className=''>
       <span
-        className={`text-black rounded-full p-2 w-20 h-20 flex items-center justify-center m-2 bg-yellow-300`}>
+        className={`text-black rounded-full p-2 w-[50px] h-[50px] flex items-center justify-center m-2 bg-yellow-300`}>
         Agent
       </span>
     </div>
@@ -35,9 +35,9 @@ const Content = ({
   bottomContent?: React.ReactNode;
 }) => {
   return (
-    <div className='flex flex-col justify-end'>
+    <div className='flex flex-col justify-end  max-w-[70%] '>
       <div
-        className={`p-2 text-gray-500 rounded-md bg-gray-200 p-2 max-w-[70%] max-h-[300px] min-w-[350px] overflow-scroll ${
+        className={`p-2 text-gray-500 rounded-md bg-gray-200 p-2max-h-[300px] overflow-scroll ${
           textAlign === 'right' ? 'flex-row-reverse' : ''
         }`}>
         {content}
@@ -92,19 +92,19 @@ const Message = ({
                 isLastMessageAnswer ? (
                   <div className='flex flex-row p-2'>
                     <Button
-                      className='mr-2 min-w-[100px]'
+                      className='mr-2 '
                       isLoading={isFollowUpQuestionPending}
                       onClick={() => handleAction('followUpQuestion')}>
                       꼬리질문
                     </Button>
                     <Button
-                      className='mr-2 min-w-[100px]'
+                      className='mr-2 '
                       isLoading={isBestAnswerPending}
                       onClick={() => handleAction('bestAnswer')}>
                       모범답변
                     </Button>
                     <Button
-                      className='mr-2 min-w-[100px]'
+                      className='mr-2 '
                       isLoading={isNextQuestionPending}
                       onClick={() => handleAction('nextQuestion')}>
                       다음질문
