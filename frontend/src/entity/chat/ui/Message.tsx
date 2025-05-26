@@ -28,13 +28,18 @@ const AgentIcon = () => {
 const Content = ({
   content,
   bottomContent,
+  textAlign = 'left',
 }: {
   content: string;
+  textAlign?: 'left' | 'right';
   bottomContent?: React.ReactNode;
 }) => {
   return (
-    <div className='flex flex-col'>
-      <div className='p-2 text-gray-500 rounded-md bg-gray-200 p-2 max-w-[70%] max-h-[300px] min-w-[200px] overflow-scroll'>
+    <div className='flex flex-col justify-end'>
+      <div
+        className={`p-2 text-gray-500 rounded-md bg-gray-200 p-2 max-w-[70%] max-h-[300px] min-w-[350px] overflow-scroll ${
+          textAlign === 'right' ? 'flex-row-reverse' : ''
+        }`}>
         {content}
       </div>
       {bottomContent}
@@ -114,7 +119,7 @@ const Message = ({
         <>
           <div className='flex flex-row-reverse p-2 items-center'>
             <UserIcon />
-            <Content content={content} />
+            <Content content={content} textAlign='right' />
           </div>
         </>
       )}

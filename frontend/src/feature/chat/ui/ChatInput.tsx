@@ -12,8 +12,8 @@ const ChatInput = () => {
   const { mutateAsync: chat, isPending } = useChat();
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
+    async (e?: React.FormEvent<HTMLFormElement>) => {
+      e?.preventDefault();
       try {
         await chat(message);
         queryClient.invalidateQueries({ queryKey: ['chatHistory'] });
@@ -34,6 +34,12 @@ const ChatInput = () => {
         name='message'
         className='w-[90%] h-full border-2 border-gray-300 rounded-md p-2'
         disabled={!inputable}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handleSubmit();
+          }
+        }}
       />
       <Button
         type='submit'
