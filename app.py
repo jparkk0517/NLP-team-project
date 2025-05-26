@@ -9,6 +9,8 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.docstore.document import Document
+from uuid import uuid4
+
 import os
 import io
 import shutil
@@ -40,43 +42,64 @@ persist_directory = os.getenv(
     os.path.join(os.path.dirname(__file__), "rag_agent/vectorstore/chroma_db"),
 )
 
+ContentType = Literal["question", "answer", "modelAnswer"]
+SpeakerType = Literal["agent", "user"]
+
+class ChatItem(BaseModel):
+    id: str
+    type: ContentType # "question" | "answer" | "modelAnswer"
+    speaker: SpeakerType # "agent" | "user"
+    content: str
 
 class ChatHistory(BaseModel):
-    """
-    question, answer 쌍을 저장하는 클래스
-    질문-답변 쌍으로 저장이 되어야하고
-    질문-답변 쌍을 추가하는 메서드와
-    질문-답변 쌍을 반환하는 메서드가 있어야한다.
-    모든 질문-답변 쌍을 반환하는 메서드가 있어야 한다.
-    """
-    # list[dict[id, question]]
-    question_history: list[dict[str, str]] = Field(default_factory=list)
-    answer_history: list[dict[str, str]] = Field(default_factory=list)
-
+    history: list[ChatItem] = []
     
+    def add(self, type: ContentType, speaker: SpeakerType, content: str) -> str:
+        id = str(uuid4().hex[:8])
+        self.history.append(ChatItem(id=id, type=type, speaker=speaker, content=content))
+        return id
+    
+    def get_all_history(self) -> list[ChatItem]:
+        return self.history
+    
+    def get_latest_question_id(self) -> Optional[str]:
+        for item in reversed(self.history):
+            if item.type == "question":
+                return item.id
+        return None
+    
+    def get_question_by_id(self, question_id: str) -> Optional[ChatItem]:
+        for item in self.history:
+            if item.id == question_id and item.type == "question":
+                return item
+        return None
+    
+    def validate_question_exists(self, question_id: str) -> bool:
+        return any(item.id == question_id and item.type == "question" for item in self.history)
+    
+    # def add_question(self, question: str):
+    #     self.question_history.append(
+    #         {"question_id": len(self.question_history), "question": question}
+    #     )
+    
+    #     return self.question_history[-1]["question_id"]
 
-    def add_question(self, question: str):
-        self.question_history.append(
-            {"question_id": len(self.question_history), "question": question}
-        )
+    # def add_answer(self, question_id: str, answer: str):
+    #     self.answer_history.append({"question_id": question_id, "answer": answer})
         
-        
-        return self.question_history[-1]["question_id"]
+    #     return self.answer_history[-1]["question_id"]
 
-    def add_answer(self, question_id: str, answer: str):
-        self.answer_history.append({"question_id": question_id, "answer": answer})
-        
-        
-        return self.answer_history[-1]["question_id"]
+class AnswerRequest(BaseModel):
+    questionId: str
+    content: str
 
-    def get_all_history(self) -> list[dict[str, str]]:
-        """List[{question, answer}]"""
-        
-        
-        return [
-            {"question": q["question"], "answer": a["answer"]}
-            for q, a in zip(self.question_history, self.answer_history)
-        ]
+class Question(BaseModel):
+    id: str
+    content: str
+
+class Answer(BaseModel):
+    id: str
+    content: str 
 
 
 chat_history = ChatHistory()
@@ -153,17 +176,6 @@ async def load_local_data():
     }
     logger.info("Precomputed company_info and initialized chains.")
 
-
-class AnswerRequest(BaseModel):
-    question_id: str
-    user_answer: str
-
-
-class FollowUpRequest(BaseModel):
-    user_answer: str
-    mode: str  # "tail", "model", "next"
-
-
 def get_company_info():
     if vectorstore is None:
         raise HTTPException(
@@ -181,7 +193,12 @@ def get_company_info():
     return company_info
 
 
-@app.post("/question")
+@app.get("/chatHistory")
+async def get_chat_history():
+    return chat_history.get_all_history()
+
+
+@app.get("/question")
 async def generate_question():
     try:
         if interview_chain is None or base_chain_inputs is None:
@@ -192,51 +209,109 @@ async def generate_question():
         response = interview_chain.invoke(base_chain_inputs)
         logger.info("Chain invocation completed")
 
-        question_id = chat_history.add_question(response["result"])
+        question_id = chat_history.add(type="question", speaker="agent", content=response["result"])
         return {
-            "question": {
-                "question_id": question_id,
-                "question": response["result"],
-            }
+            "id": question_id,
+            "content": response["result"],
         }
     except Exception as e:
         logger.error(f"Error in question generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/answer")
+async def submit_answer(request: AnswerRequest):
+    question_id = request.questionId
+    content = request.content
+    if not chat_history.validate_question_exists(question_id):
+        raise HTTPException(status_code=404, detail="Cannot find question id.")
+    
+    answer_id = chat_history.add(type="answer", speaker="user", content=content)
+    return {
+        "id": answer_id,
+        "content": content
+    }
+    
+    
 @app.post("/evaluate")
 async def evaluate_answer(request: AnswerRequest):
     print(request)
-    question_id = request.question_id
-    answer = request.user_answer
-    chat_history.add_answer(question_id, answer)
+    question_id = request.questionId
+    answer = request.content
+    chat_history.add(type="answer", speaker="user", content=content)
     return {"response": answer}
 
 
-@app.post("/followup")
-async def generate_followup():
-    if chat_history.question_history is None:
-        raise HTTPException(status_code=400, detail="No question generated yet.")
-    if chat_history.answer_history is None:
-        raise HTTPException(status_code=400, detail="No answer generated yet.")
+@app.get("/followUp")
+async def generate_followup(questionId: str):
+    question_id = questionId
+    if chat_history.history is None:
+        raise HTTPException(status_code=400, detail="No chat history yet.")
+    if not chat_history.validate_question_exists(question_id):
+        raise HTTPException(status_code=404, detail="Cannot find question id.")
+    
     try:
         logger.info("Generating followup using pre-initialized chain")
         if followup_chain is None or base_chain_inputs is None:
-            raise HTTPException(
-                status_code=500, detail="Followup chain not initialized."
-            )
+            raise HTTPException(status_code=500, detail="Followup chain not initialized.")
+        
+        question_item = None
+        answer_item = None
+        
+        for idx, item in enumerate(chat_history.history):
+            if item.id == question_id and item.type == "question":
+                question_item = item
+                if idx + 1 < len(chat_history.history):
+                    next_item = chat_history.history[idx + 1]
+                    if next_item.type == "answer":
+                        answer_item = next_item
+                break
+        
+        if question_item is None or answer_item is None:
+            raise HTTPException(status_code=400, detail="No question or answer matching with questionId.")
+        
         inputs = {
             **base_chain_inputs,
-            "prev_question_answer_pairs": chat_history.get_all_history(),
+            "prev_question_answer_pairs": [
+                {"question": question_item, "answer": answer_item}
+            ],
         }
+        
         response = followup_chain.invoke(inputs)
-        question_id = chat_history.add_question(response["result"])
+        question_id = chat_history.add(type="question", speaker="agent", content=response["result"])
         logger.info("Followup generated")
-        return {"response": question_id}
+        return {
+            "id": question_id,
+            "content": response["result"],
+        }
     except Exception as e:
         logger.error(f"Error in followup generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/modelAnswer")
+async def generate_model_answer(questionId: str):
+    question_id = questionId
+    if chat_history.history is None:
+        raise HTTPException(status_code=400, detail="No chat history yet.")
+    if not chat_history.validate_question_exists(question_id):
+        raise HTTPException(status_code=404, detail="Cannot find question id.")
+    
+    question_item = chat_history.get_question_by_id(question_id)
+    if question_item is None:
+        raise HTTPException(status_code=404, detail="Cannot find question data.")
+    
+    try:
+        # TODO: response <- model_answer_chain 연결 필요
+        response = { "result": "모범답안 예시입니다" }
+        answer_id = chat_history.add(type="modelAnswer", speaker="agent", content=response["result"])
+        return {
+            "id": answer_id,
+            "content": response["result"]
+        }
+    except Exception as e:
+        logger.error(f"Error in model answer generation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
 app.mount("/", StaticFiles(directory=dist_path, html=True), name="frontend")
 
