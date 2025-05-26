@@ -15,7 +15,7 @@ const randomMockDataGenerator = () => {
         type: isAgent ? 'answer' : 'question',
         speaker: isAgent ? 'agent' : 'user',
         content: isAgent
-          ? '안녕하세요 면접관입니다.안녕하세요 면접관입니다.안녕하세요 면접관입니다.안녕하세요 면접관입니다.안녕하세요 면접관입니다.안녕하세요 면접관입니다.안녕하세요 면접관입니다.안녕하세요 면접관입니다.안녕하세요 면접관입니다.안녕하세요 면접관입니다.안녕하세요 면접관입니다.안녕하세요 면접관입니다.'
+          ? '안녕하세요 면접관입니다.'
           : '안녕하세요 면접자입니다.',
       };
     }) as ChatHistoryDTO[];

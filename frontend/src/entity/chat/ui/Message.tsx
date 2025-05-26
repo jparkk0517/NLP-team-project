@@ -4,20 +4,31 @@ import Button from '../../../shared/Button';
 
 const UserIcon = ({ speaker }: { speaker: SpeakerType }) => {
   return (
-    <span
-      className={`text-black rounded-full p-2 w-20 h-20 flex items-center justify-center m-2
+    <div className='w-[20%]'>
+      <span
+        className={`text-black rounded-full p-2 w-20 h-20 flex items-center justify-center m-2
       ${speaker === 'agent' ? 'bg-yellow-300' : 'bg-green-300'}
       `}>
-      {speaker}
-    </span>
+        {speaker}
+      </span>
+    </div>
   );
 };
 
-const Content = ({ content }: { content: string }) => {
+const Content = ({
+  content,
+  bottomContent,
+}: {
+  content: string;
+  bottomContent?: React.ReactNode;
+}) => {
   return (
-    <span className='text-gray-500 rounded-md bg-gray-200 p-2 max-w-[70%]'>
-      {content}
-    </span>
+    <div>
+      <div className='p-2 text-gray-500 rounded-md bg-gray-200 p-2 max-w-[70%] max-h-[300px] min-w-[200px] overflow-scroll'>
+        {content}
+      </div>
+      {bottomContent}
+    </div>
   );
 };
 
@@ -73,33 +84,37 @@ const Message = ({ id, type, speaker, content }: ChatHistoryDTO) => {
     <div className='w-full items-center my-4'>
       {isAgent ? (
         <>
-          <div className='flex flex-row items-center p-2'>
+          <div className='flex p-2'>
             <UserIcon speaker={speaker} />
-            <Content content={content} />
+            <Content
+              content={content}
+              bottomContent={
+                type === 'answer' ? (
+                  <div className='flex flex-row p-2'>
+                    <Button
+                      className='mr-2'
+                      onClick={() => handleAction('followUpQuestion')}>
+                      꼬리질문
+                    </Button>
+                    <Button
+                      className='mr-2'
+                      onClick={() => handleAction('bestAnswer')}>
+                      모범답변
+                    </Button>
+                    <Button
+                      className='mr-2'
+                      onClick={() => handleAction('nextQuestion')}>
+                      다음질문
+                    </Button>
+                  </div>
+                ) : null
+              }
+            />
           </div>
-          {type === 'answer' && (
-            <div className='flex flex-row p-2'>
-              <Button
-                className='mr-2'
-                onClick={() => handleAction('followUpQuestion')}>
-                꼬리질문
-              </Button>
-              <Button
-                className='mr-2'
-                onClick={() => handleAction('bestAnswer')}>
-                모범답변
-              </Button>
-              <Button
-                className='mr-2'
-                onClick={() => handleAction('nextQuestion')}>
-                다음질문
-              </Button>
-            </div>
-          )}
         </>
       ) : (
         <>
-          <div className='flex flex-row-reverse w-full items-center'>
+          <div className='flex flex-row-reverse p-2 items-center'>
             <UserIcon speaker={speaker} />
             <Content content={content} />
           </div>
