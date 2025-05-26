@@ -3,6 +3,7 @@ import Message from '../../../entity/chat/ui/Message';
 import type { ChatHistoryDTO } from '../../../shared/type';
 import { useRef, useEffect } from 'react';
 import useFrontStore from '../../../shared/frontStore';
+import { useMemo } from 'react';
 
 const randomMockDataGenerator = () => {
   return Array(Math.floor(Math.random() * 100) + 1)
@@ -40,19 +41,21 @@ const ChatBody = () => {
   const { data } = useChatHistory();
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
+  const messages = useMemo(() => {
+    return data?.map((message) => <Message {...message} key={message.id} />);
+  }, [data]);
+
   useEffect(() => {
     if (chatEndRef.current) {
       setTimeout(() => {
         chatEndRef.current?.scrollIntoView();
-      }, 10);
+      }, 0);
     }
   }, [data]);
 
   return (
     <div className='flex flex-col justify-center items-center h-[85%] border-b-2 border-gray-300 overflow-scroll'>
-      {data?.map((message) => (
-        <Message {...message} key={message.id} />
-      ))}
+      {messages}
       <div ref={chatEndRef} />
     </div>
   );

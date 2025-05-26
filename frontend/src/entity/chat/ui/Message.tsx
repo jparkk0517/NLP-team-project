@@ -1,15 +1,24 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { ChatHistoryDTO, SpeakerType } from '../../../shared/type';
+import type { ChatHistoryDTO } from '../../../shared/type';
 import Button from '../../../shared/Button';
 
-const UserIcon = ({ speaker }: { speaker: SpeakerType }) => {
+const UserIcon = () => {
   return (
     <div className='w-[20%]'>
       <span
-        className={`text-black rounded-full p-2 w-20 h-20 flex items-center justify-center m-2
-      ${speaker === 'agent' ? 'bg-yellow-300' : 'bg-green-300'}
-      `}>
-        {speaker}
+        className={`text-black rounded-full p-2 w-20 h-20 flex items-center justify-center m-2 bg-green-300`}>
+        User
+      </span>
+    </div>
+  );
+};
+
+const AgentIcon = () => {
+  return (
+    <div className='w-[20%]'>
+      <span
+        className={`text-black rounded-full p-2 w-20 h-20 flex items-center justify-center m-2 bg-yellow-300`}>
+        Agent
       </span>
     </div>
   );
@@ -85,7 +94,7 @@ const Message = ({ id, type, speaker, content }: ChatHistoryDTO) => {
       {isAgent ? (
         <>
           <div className='flex p-2'>
-            <UserIcon speaker={speaker} />
+            <AgentIcon />
             <Content
               content={content}
               bottomContent={
@@ -115,7 +124,7 @@ const Message = ({ id, type, speaker, content }: ChatHistoryDTO) => {
       ) : (
         <>
           <div className='flex flex-row-reverse p-2 items-center'>
-            <UserIcon speaker={speaker} />
+            <UserIcon />
             <Content content={content} />
           </div>
         </>
