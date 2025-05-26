@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 
 const useFrontStore = create<{
-  isLastMessageAnswer: boolean;
-  setIsLastMessageAnswer: (isLastMessageAnswer: boolean) => void;
+  inputable: boolean;
+  setInputable: (inputable: boolean) => void;
 }>((set) => ({
-  isLastMessageAnswer: false,
-  setIsLastMessageAnswer: (isLastMessageAnswer) => set({ isLastMessageAnswer }),
+  inputable: true,
+  setInputable: (inputable) => set({ inputable }),
 }));
 
 export default useFrontStore;

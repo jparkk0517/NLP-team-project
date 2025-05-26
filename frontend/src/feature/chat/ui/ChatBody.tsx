@@ -1,60 +1,43 @@
-import { useQuery } from '@tanstack/react-query';
 import Message from '../../../entity/chat/ui/Message';
-import type { ChatHistoryDTO } from '../../../shared/type';
 import { useRef, useEffect } from 'react';
-import useFrontStore from '../../../shared/frontStore';
 import { useMemo } from 'react';
-
-const randomMockDataGenerator = () => {
-  return Array(Math.floor(Math.random() * 100) + 1)
-    .fill(0)
-    .map((_, index) => {
-      const isAgent = Math.random() < 0.5;
-
-      return {
-        id: index.toString(),
-        type: isAgent ? 'answer' : 'question',
-        speaker: isAgent ? 'agent' : 'user',
-        content: isAgent
-          ? '안녕하세요 면접관입니다.'
-          : '안녕하세요 면접자입니다.',
-      };
-    }) as ChatHistoryDTO[];
-};
-const useChatHistory = () => {
-  const res = useQuery({
-    queryKey: ['chatHistory'],
-    queryFn: () => {
-      return Promise.resolve(randomMockDataGenerator());
-    },
-  });
-  const { setIsLastMessageAnswer } = useFrontStore();
-  useEffect(() => {
-    const isLastMessageAnswer =
-      res.data?.[res.data.length - 1]?.type === 'answer';
-    setIsLastMessageAnswer(isLastMessageAnswer);
-  }, [res.data, setIsLastMessageAnswer]);
-  return { ...res };
-};
+import { useChatHistory, useRequest } from '../hook/useChat';
+import { debounce } from '../../../shared/utils';
+import { useCallback } from 'react';
 
 const ChatBody = () => {
-  const { data } = useChatHistory();
+  const isFirst = useRef(true);
+  const { nextQuestion } = useRequest();
+  const { data, isFetching, refetch } = useChatHistory();
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   const messages = useMemo(() => {
     return data?.map((message) => <Message {...message} key={message.id} />);
   }, [data]);
 
+  const firstQuestionDebounce = useCallback(
+    debounce(() => {
+      if (!isFirst.current) return;
+      isFirst.current = false;
+      nextQuestion().then(() => {
+        refetch();
+      });
+    }, 10),
+    [nextQuestion, refetch]
+  );
   useEffect(() => {
+    if (data?.length === 0 && !isFetching) {
+      return firstQuestionDebounce();
+    }
+
     if (chatEndRef.current) {
       setTimeout(() => {
         chatEndRef.current?.scrollIntoView();
       }, 0);
     }
-  }, [data]);
-
+  }, [data, firstQuestionDebounce, isFetching]);
   return (
-    <div className='flex flex-col justify-center items-center h-[85%] border-b-2 border-gray-300 overflow-scroll'>
+    <div className='flex flex-col h-[85%] border-b-2 border-gray-300 overflow-scroll'>
       {messages}
       <div ref={chatEndRef} />
     </div>

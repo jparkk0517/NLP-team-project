@@ -1,10 +1,11 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ChatHistoryDTO } from '../../../shared/type';
 import Button from '../../../shared/Button';
+import { useRequest } from '../../../feature/chat/hook/useChat';
 
 const UserIcon = () => {
   return (
-    <div className='w-[20%]'>
+    <div className=''>
       <span
         className={`text-black rounded-full p-2 w-20 h-20 flex items-center justify-center m-2 bg-green-300`}>
         User
@@ -15,7 +16,7 @@ const UserIcon = () => {
 
 const AgentIcon = () => {
   return (
-    <div className='w-[20%]'>
+    <div className=''>
       <span
         className={`text-black rounded-full p-2 w-20 h-20 flex items-center justify-center m-2 bg-yellow-300`}>
         Agent
@@ -32,7 +33,7 @@ const Content = ({
   bottomContent?: React.ReactNode;
 }) => {
   return (
-    <div>
+    <div className='flex flex-col'>
       <div className='p-2 text-gray-500 rounded-md bg-gray-200 p-2 max-w-[70%] max-h-[300px] min-w-[200px] overflow-scroll'>
         {content}
       </div>
@@ -41,36 +42,21 @@ const Content = ({
   );
 };
 
-const useRequest = () => {
-  const { mutateAsync: followUpQuestion } = useMutation({
-    mutationFn: ({ questionId }: { questionId: string }) => {
-      console.log(questionId);
-      return Promise.resolve(null);
-    },
-  });
-
-  const { mutateAsync: bestAnswer } = useMutation({
-    mutationFn: ({ questionId }: { questionId: string }) => {
-      console.log(questionId);
-      return Promise.resolve(null);
-    },
-  });
-
-  const { mutateAsync: nextQuestion } = useMutation({
-    mutationFn: () => {
-      return Promise.resolve(null);
-    },
-  });
-  return {
+const Message = ({
+  id,
+  speaker,
+  content,
+  isLastMessageAnswer,
+}: ChatHistoryDTO) => {
+  const queryClient = useQueryClient();
+  const {
     followUpQuestion,
     bestAnswer,
     nextQuestion,
-  };
-};
-
-const Message = ({ id, type, speaker, content }: ChatHistoryDTO) => {
-  const queryClient = useQueryClient();
-  const { followUpQuestion, bestAnswer, nextQuestion } = useRequest();
+    isFollowUpQuestionPending,
+    isBestAnswerPending,
+    isNextQuestionPending,
+  } = useRequest();
   const isAgent = speaker === 'agent';
   const handleAction = async (
     type: 'followUpQuestion' | 'bestAnswer' | 'nextQuestion'
@@ -98,20 +84,23 @@ const Message = ({ id, type, speaker, content }: ChatHistoryDTO) => {
             <Content
               content={content}
               bottomContent={
-                type === 'answer' ? (
+                isLastMessageAnswer ? (
                   <div className='flex flex-row p-2'>
                     <Button
-                      className='mr-2'
+                      className='mr-2 min-w-[100px]'
+                      isLoading={isFollowUpQuestionPending}
                       onClick={() => handleAction('followUpQuestion')}>
                       꼬리질문
                     </Button>
                     <Button
-                      className='mr-2'
+                      className='mr-2 min-w-[100px]'
+                      isLoading={isBestAnswerPending}
                       onClick={() => handleAction('bestAnswer')}>
                       모범답변
                     </Button>
                     <Button
-                      className='mr-2'
+                      className='mr-2 min-w-[100px]'
+                      isLoading={isNextQuestionPending}
                       onClick={() => handleAction('nextQuestion')}>
                       다음질문
                     </Button>
