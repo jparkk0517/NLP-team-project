@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Callable, Literal, Optional
 import uvicorn
 from rag_agent.chains.interview_chain import (
+    get_assessment_chain,
     get_evaluate_chain,
     get_followup_chain,
     get_interview_chain,
@@ -40,6 +41,7 @@ interview_chain = None
 followup_chain = None
 evaluate_chain = None
 model_answer_chain = None
+assessment_chain = None
 base_chain_inputs: Optional[dict] = None
 # RAG 벡터 스토어
 vectorstore: Optional[Chroma] = None
@@ -88,6 +90,15 @@ class ChatHistory(BaseModel):
     def validate_question_exists(self, question_id: str) -> bool:
         return any(
             item.id == question_id and item.type == "question" for item in self.history
+        )
+
+    def get_all_history_as_string(self) -> str:
+        return "\n".join(
+            [
+                f"{item.speaker}: {item.content}"
+                for item in self.history
+                if item.type == "question" or item.type == "answer"
+            ]
         )
 
     # def add_question(self, question: str):
@@ -151,7 +162,7 @@ async def init_local_data():
 @app.on_event("startup")
 async def load_local_data():
     await init_local_data()
-    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain
+    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain, assessment_chain
     base_dir = os.path.join(os.path.dirname(__file__), "data")
     # 이력서 로딩
     resume_dir = os.path.join(base_dir, "resume")
@@ -187,6 +198,7 @@ async def load_local_data():
     followup_chain = get_followup_chain()
     evaluate_chain = get_evaluate_chain()
     model_answer_chain = get_model_answer_chain()
+    assessment_chain = get_assessment_chain()
     base_chain_inputs = {
         "resume": stored_resume,
         "jd": stored_jd,
@@ -271,13 +283,19 @@ async def submit_answer(request: AnswerRequest):
     return {"id": answer_id, "content": content}
 
 
-# @app.post("/evaluate")
-# async def evaluate_answer(request: AnswerRequest):
-#     print(request)
-#     question_id = request.questionId
-#     answer = request.content
-#     chat_history.add(type="answer", speaker="user", content=content)
-#     return {"response": answer}
+@app.get("/assessment")
+async def get_assessment():
+    """
+    평가 결과 반환
+    논리성, 직무적합성, 핵심가치 부합성, 커뮤니케이션 능력
+    """
+    assessment_content = assessment_chain.invoke(
+        {
+            **base_chain_inputs,
+            "chat_history": chat_history.get_all_history_as_string(),
+        }
+    )
+    return assessment_content
 
 
 @app.get("/followUp")
