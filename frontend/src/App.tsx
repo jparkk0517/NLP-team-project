@@ -4,6 +4,7 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query';
 import ChatPage from './page/ChatPage';
+import ToastProvider from './shared/toast';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -17,6 +18,7 @@ function App() {
     <>
       <QueryClientProvider client={queryClient}>
         <ChatPage />
+        <ToastProvider />
       </QueryClientProvider>
     </>
   );
