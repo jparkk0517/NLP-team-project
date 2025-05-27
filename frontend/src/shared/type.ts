@@ -19,3 +19,11 @@ export interface AnswerDTO {
   id: string;
   content: string;
 }
+
+export interface AssessmentResultDTO {
+  logicScore: number;
+  jobFitScore: number;
+  coreValueFitScore: number;
+  communicationScore: number;
+  averageScore: number;
+}
