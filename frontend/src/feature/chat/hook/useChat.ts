@@ -1,38 +1,33 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import useFrontStore from '../../../shared/frontStore';
+import useChatStore from '../../../shared/chatStore';
+import { Api } from '../../../shared/Api';
 import type { ChatHistoryDTO } from '../../../shared/type';
+import { useRef } from 'react';
 
-const mockData = [] as ChatHistoryDTO[];
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-expect-error
-window.mockData = mockData;
 const useChatHistory = () => {
+  const first = useRef(true);
+  const { nextQuestion } = useRequest();
   const res = useQuery({
     queryKey: ['chatHistory'],
-    queryFn: async () => {
-      return await [...mockData];
-    },
+    queryFn: () => Api.GET<ChatHistoryDTO[]>('/chatHistory'),
   });
-  const { setInputable } = useFrontStore();
+  const { setLastMessage } = useChatStore();
   useEffect(() => {
     const lastMessage = res.data?.[res.data.length - 1];
-    setInputable(
-      !!lastMessage &&
-        lastMessage.speaker === 'agent' &&
-        lastMessage.type === 'question'
-    );
-  }, [res.data, setInputable]);
-  return {
-    ...res,
-    data: res.data?.map((data, id) => ({
-      ...data,
-      isLastMessageAnswer:
-        data.speaker === 'agent' &&
-        ['answer', 'modelAnswer'].includes(data.type) &&
-        id === res.data.length - 1,
-    })),
-  };
+    setLastMessage(lastMessage);
+  }, [res.data, setLastMessage]);
+
+  useEffect(() => {
+    if (first.current && res.data?.length === 0) {
+      first.current = false;
+      nextQuestion().then(() => {
+        res.refetch();
+      });
+    }
+  }, [nextQuestion, res, res.data?.length]);
+
+  return res;
 };
 
 const useRequest = () => {
@@ -41,44 +36,25 @@ const useRequest = () => {
     isPending: isFollowUpQuestionPending,
   } = useMutation({
     mutationFn: async ({ questionId }: { questionId: string }) => {
-      mockData.push({
-        id: mockData.length.toString(),
-        type: 'question',
-        speaker: 'agent',
-        content: `${questionId} 에 대한 꼬리질문`,
+      return await Api.GET<null>('/followUp', {
+        questionId,
       });
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return await Promise.resolve(null);
     },
   });
 
   const { mutateAsync: bestAnswer, isPending: isBestAnswerPending } =
     useMutation({
-      mutationFn: async ({ questionId }: { questionId: string }) => {
-        mockData.push({
-          id: mockData.length.toString(),
-          type: 'modelAnswer',
-          speaker: 'agent',
-          content: `${questionId} 에 대한 최적의 답변`,
-        });
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        return await Promise.resolve(null);
-      },
+      mutationFn: async ({ questionId }: { questionId: string }) =>
+        Api.GET<null>('/modelAnswer', {
+          questionId,
+        }),
     });
 
   const { mutateAsync: nextQuestion, isPending: isNextQuestionPending } =
     useMutation({
-      mutationFn: async () => {
-        mockData.push({
-          id: mockData.length.toString(),
-          type: 'question',
-          speaker: 'agent',
-          content: '새로운 질문입니다.',
-        });
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        return await Promise.resolve(null);
-      },
+      mutationFn: async () => Api.GET<null>('/question'),
     });
+
   return {
     followUpQuestion,
     bestAnswer,
@@ -89,25 +65,20 @@ const useRequest = () => {
   };
 };
 
-const useChat = () => {
+const useAnswer = () => {
   return useMutation({
-    mutationFn: async (message: string) => {
-      mockData.push({
-        id: mockData.length.toString(),
-        type: 'question',
-        speaker: 'user',
-        content: message,
-      });
-      mockData.push({
-        id: mockData.length.toString(),
-        type: 'answer',
-        speaker: 'agent',
-        content: `${message} 는 훌륭한 답변이에요.`,
-      });
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return await Promise.resolve(null);
-    },
+    mutationFn: ({
+      questionId,
+      content,
+    }: {
+      questionId: string;
+      content: string;
+    }) =>
+      Api.POST<{ questionId: string; content: string }, null>('/answer', {
+        questionId,
+        content,
+      }),
   });
 };
 
-export { useChatHistory, useRequest, useChat };
+export { useChatHistory, useRequest, useAnswer };
