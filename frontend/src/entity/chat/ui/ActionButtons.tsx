@@ -2,13 +2,19 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRequest } from '../../../feature/chat/hook/useChat';
 import Button from '../../../shared/Button';
 import useChatStore from '../../../shared/chatStore';
+import { useShallow } from 'zustand/shallow';
 
 interface ActionButtonsProps {
   disabled?: boolean;
 }
 
 const ActionButtons = ({ disabled = false }: ActionButtonsProps) => {
-  const lastMessage = useChatStore((state) => state.lastMessage);
+  const { lastMessage, lastQuestionId } = useChatStore(
+    useShallow((state) => ({
+      lastMessage: state.lastMessage,
+      lastQuestionId: state.lastQuestionId,
+    }))
+  );
 
   const queryClient = useQueryClient();
   const {
@@ -29,11 +35,11 @@ const ActionButtons = ({ disabled = false }: ActionButtonsProps) => {
     type: 'followUpQuestion' | 'bestAnswer' | 'nextQuestion'
   ) => {
     try {
-      if (!lastMessage) return;
+      if (!lastQuestionId) return;
       if (type === 'followUpQuestion') {
-        await followUpQuestion({ questionId: lastMessage.id });
+        await followUpQuestion({ questionId: lastQuestionId });
       } else if (type === 'bestAnswer') {
-        await bestAnswer({ questionId: lastMessage.id });
+        await bestAnswer({ questionId: lastQuestionId });
       } else if (type === 'nextQuestion') {
         await nextQuestion();
       }
@@ -46,7 +52,9 @@ const ActionButtons = ({ disabled = false }: ActionButtonsProps) => {
   return (
     <div className='flex flex-row p-2'>
       <Button
-        disabled={lastMessage?.type === 'question' || isDisabled}
+        disabled={
+          lastMessage?.type === 'question' || isDisabled || !lastQuestionId
+        }
         className='mr-2 '
         isLoading={isFollowUpQuestionPending}
         onClick={() => handleAction('followUpQuestion')}>
