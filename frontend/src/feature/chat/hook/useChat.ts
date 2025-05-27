@@ -4,6 +4,7 @@ import useChatStore from '../../../shared/chatStore';
 import { Api } from '../../../shared/Api';
 import type { ChatHistoryDTO } from '../../../shared/type';
 import { useRef } from 'react';
+import { useShallow } from 'zustand/shallow';
 
 const useChatHistory = () => {
   const first = useRef(true);
@@ -12,11 +13,20 @@ const useChatHistory = () => {
     queryKey: ['chatHistory'],
     queryFn: () => Api.GET<ChatHistoryDTO[]>('/chatHistory'),
   });
-  const { setLastMessage } = useChatStore();
+  const { setLastMessage, setLastQuestionId } = useChatStore(
+    useShallow((state) => ({
+      setLastMessage: state.setLastMessage,
+      setLastQuestionId: state.setLastQuestionId,
+    }))
+  );
   useEffect(() => {
     const lastMessage = res.data?.[res.data.length - 1];
+    const lastQuestionId = [...(res.data ?? [])]
+      .reverse()
+      .find((item) => item.type === 'question')?.id;
     setLastMessage(lastMessage);
-  }, [res.data, setLastMessage]);
+    setLastQuestionId(lastQuestionId);
+  }, [res.data, setLastMessage, setLastQuestionId]);
 
   useEffect(() => {
     if (first.current && res.data?.length === 0) {
