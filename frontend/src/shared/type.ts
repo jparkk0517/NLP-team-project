@@ -1,4 +1,4 @@
-export type ContentType = 'question' | 'answer' | 'modelAnswer';
+export type ContentType = 'question' | 'answer' | 'modelAnswer' | 'evaluate';
 export type SpeakerType = 'agent' | 'user';
 export interface ChatHistoryDTO {
   id: string;

@@ -1,7 +1,6 @@
-import { useQueryClient } from '@tanstack/react-query';
 import type { ChatHistoryDTO } from '../../../shared/type';
-import Button from '../../../shared/Button';
-import { useRequest } from '../../../feature/chat/hook/useChat';
+import { useRef } from 'react';
+import { useEffect } from 'react';
 
 const UserIcon = () => {
   return (
@@ -27,12 +26,10 @@ const AgentIcon = () => {
 
 const Content = ({
   content,
-  bottomContent,
   textAlign = 'left',
 }: {
   content: string;
   textAlign?: 'left' | 'right';
-  bottomContent?: React.ReactNode;
 }) => {
   return (
     <div className='flex flex-col justify-end  max-w-[70%] '>
@@ -42,77 +39,35 @@ const Content = ({
         }`}>
         {content}
       </div>
-      {bottomContent}
     </div>
   );
 };
 
 const Message = ({
-  id,
   speaker,
   content,
-  isLastMessageAnswer,
-}: ChatHistoryDTO) => {
-  const queryClient = useQueryClient();
-  const {
-    followUpQuestion,
-    bestAnswer,
-    nextQuestion,
-    isFollowUpQuestionPending,
-    isBestAnswerPending,
-    isNextQuestionPending,
-  } = useRequest();
+  isLastMessage,
+}: ChatHistoryDTO & {
+  isLastMessage: boolean;
+}) => {
+  const messageRef = useRef<HTMLDivElement>(null);
+
   const isAgent = speaker === 'agent';
-  const handleAction = async (
-    type: 'followUpQuestion' | 'bestAnswer' | 'nextQuestion'
-  ) => {
-    try {
-      if (type === 'followUpQuestion') {
-        await followUpQuestion({ questionId: id });
-      } else if (type === 'bestAnswer') {
-        await bestAnswer({ questionId: id });
-      } else if (type === 'nextQuestion') {
-        await nextQuestion();
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      queryClient.invalidateQueries({ queryKey: ['chatHistory'] });
+
+  useEffect(() => {
+    if (isLastMessage) {
+      setTimeout(() => {
+        messageRef.current?.scrollIntoView();
+      }, 0);
     }
-  };
+  }, [isLastMessage]);
   return (
-    <div className='w-full items-center my-4'>
+    <div className='w-full items-center my-4' ref={messageRef}>
       {isAgent ? (
         <>
           <div className='flex p-2'>
             <AgentIcon />
-            <Content
-              content={content}
-              bottomContent={
-                isLastMessageAnswer ? (
-                  <div className='flex flex-row p-2'>
-                    <Button
-                      className='mr-2 '
-                      isLoading={isFollowUpQuestionPending}
-                      onClick={() => handleAction('followUpQuestion')}>
-                      꼬리질문
-                    </Button>
-                    <Button
-                      className='mr-2 '
-                      isLoading={isBestAnswerPending}
-                      onClick={() => handleAction('bestAnswer')}>
-                      모범답변
-                    </Button>
-                    <Button
-                      className='mr-2 '
-                      isLoading={isNextQuestionPending}
-                      onClick={() => handleAction('nextQuestion')}>
-                      다음질문
-                    </Button>
-                  </div>
-                ) : null
-              }
-            />
+            <Content content={content} />
           </div>
         </>
       ) : (
