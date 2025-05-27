@@ -114,10 +114,41 @@ evaluate_prompt = PromptTemplate(
     """,
 )
 
+model_answer_prompt = PromptTemplate(
+    input_variables=["resume", "jd", "company_infos", "question"],
+    template="""
+        역할:
+        당신은 면접관입니다. 지원자의 답변을 듣고 다음 질문을 생성해야 합니다.
+        지원자가 답변한 내용이 처음 질문에 적합한 답변인지 철저하게 판단하고, 그 판단에 의거해서 후속질문을 만들어야 한다.
+
+        상황:
+        당신이 보고있는 화면에는 지원자가 지원한 직무 JD, 지원자의 RESUME 등이 있는 상황입니다.
+        이 면접자가 해당 직무의 담당자로 입사해서 충분한 역할을 하고, 회사와 함께 성장할 수 있는지 판단하기 위해 지원자를 검증해야합니다.
+
+        회사 자료:
+        {company_infos}
+
+        직무 설명:
+        {jd}
+
+        이력서:
+        {resume}
+
+        질문:
+        {question}
+
+        모델 답변:
+        위 상황에서 지원자가 주어진 질문에 대한 최선의 답변을 생성해야 한다.
+        답변은 한글로 생성해야 한다.
+    """,
+)
+
 logger.info("Prompt templates created successfully")
 interview_chain = LLMChain(llm=llm, prompt=interview_prompt, output_key="result")
 followup_chain = LLMChain(llm=llm, prompt=followup_prompt, output_key="result")
 evaluate_chain = LLMChain(llm=llm, prompt=evaluate_prompt, output_key="result")
+model_answer_chain = LLMChain(llm=llm, prompt=model_answer_prompt, output_key="result")
+
 logger.info("Chains created successfully")
 
 
@@ -131,3 +162,7 @@ def get_followup_chain():
 
 def get_evaluate_chain():
     return evaluate_chain
+
+
+def get_model_answer_chain():
+    return model_answer_chain

@@ -7,6 +7,7 @@ from rag_agent.chains.interview_chain import (
     get_evaluate_chain,
     get_followup_chain,
     get_interview_chain,
+    get_model_answer_chain,
 )
 import logging
 from langchain_community.vectorstores import Chroma
@@ -38,6 +39,7 @@ stored_company_info: Optional[str] = None
 interview_chain = None
 followup_chain = None
 evaluate_chain = None
+model_answer_chain = None
 base_chain_inputs: Optional[dict] = None
 # RAG 벡터 스토어
 vectorstore: Optional[Chroma] = None
@@ -149,7 +151,7 @@ async def init_local_data():
 @app.on_event("startup")
 async def load_local_data():
     await init_local_data()
-    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain
+    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain
     base_dir = os.path.join(os.path.dirname(__file__), "data")
     # 이력서 로딩
     resume_dir = os.path.join(base_dir, "resume")
@@ -184,6 +186,7 @@ async def load_local_data():
     interview_chain = get_interview_chain()
     followup_chain = get_followup_chain()
     evaluate_chain = get_evaluate_chain()
+    model_answer_chain = get_model_answer_chain()
     base_chain_inputs = {
         "resume": stored_resume,
         "jd": stored_jd,
@@ -345,7 +348,12 @@ async def generate_model_answer(questionId: str):
 
     try:
         # TODO: response <- model_answer_chain 연결 필요
-        response = {"result": "모범답안 예시입니다"}
+        response = model_answer_chain.invoke(
+            {
+                **base_chain_inputs,
+                "question": question_item,
+            }
+        )
         answer_id = chat_history.add(
             type="modelAnswer", speaker="agent", content=response["result"]
         )
