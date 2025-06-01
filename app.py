@@ -16,6 +16,7 @@ from langchain_community.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.docstore.document import Document
 from uuid import uuid4
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 
 import os
 import io
@@ -140,11 +141,13 @@ def parse_file_to_text(file_path: str) -> str:
         return content.decode("utf-8")
     except UnicodeDecodeError:
         if file_path.lower().endswith(".pdf"):
-            reader = PyPDF2.PdfReader(io.BytesIO(content))
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
-        elif file_path.lower().endswith((".docx", ".doc")):
-            doc = docx.Document(io.BytesIO(content))
-            return "\n".join(p.text for p in doc.paragraphs)
+            loader = PyPDFLoader(file_path)
+            docs = loader.load()
+            return "\n".join(doc.page_content for doc in docs)
+        elif file_path.lower().endswith((".docx", ".doc", ".txt")):
+            loader = TextLoader(file_path)
+            docs = loader.load()
+            return "\n".join(doc.page_content for doc in docs)
         else:
             return content.decode("utf-8", errors="ignore")
 
