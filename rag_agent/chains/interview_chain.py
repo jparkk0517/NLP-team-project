@@ -1,5 +1,4 @@
 from pydantic import BaseModel, Field
-from langchain_core.output_parsers import JsonOutputParser
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
@@ -54,7 +53,7 @@ def classify_input(input):
         형식: resume, interview_answer, other 중 하나로만 답하세요.
         """
     )
-    chain = classify_prompt | llm | StrOutputParser()
+    chain = classify_prompt | llm | JsonOutputParser()
     return chain.invoke({"input": input})
 
 @tool
@@ -89,7 +88,7 @@ def generate_reasoning(data):
         - JD에서 강조한 데이터 분석 경험이 자소서에 일부 존재하나 프로젝트 구체성 부족.
         """
     )
-    chain = reasoning_prompt | llm | StrOutputParser()
+    chain = reasoning_prompt | llm | JsonOutputParser()
     return chain.invoke({
         "resume": resume,
         "jd": jd,
@@ -111,7 +110,7 @@ def generate_acting(reasoning):
         - 협업 경험 중 가장 도전적이었던 상황은 무엇이었나요?
         """
     )
-    chain = acting_prompt | llm | StrOutputParser()
+    chain = acting_prompt | llm | JsonOutputParser()
     return chain.invoke({"reasoning": reasoning})
 
 @tool
@@ -125,7 +124,7 @@ def translate_to_korean(text: str) -> str:
 
     한국어:
     """)
-    chain = translate_prompt | llm | StrOutputParser()
+    chain = translate_prompt | llm | JsonOutputParser()
     return chain.invoke({"text": text})
 
 tools = [
