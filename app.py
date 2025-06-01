@@ -388,9 +388,9 @@ async def generate_model_answer(questionId: str):
         raise HTTPException(status_code=500, detail=str(e))
     
 
-@app.post("/input")
+@app.post("/")
 async def analyze_input(text: str):
-    try:
+    try:            
         resume = base_chain_inputs["resume"]
         jd = base_chain_inputs["jd"]
         company = base_chain_inputs["company_infos"]
@@ -408,8 +408,8 @@ async def analyze_input(text: str):
         Action: generate_reasoning
         Action Input: {json.dumps({
             "resume": resume,
-            "jd": base_chain_inputs["jd"],
-            "company": base_chain_inputs["company_infos"]
+            "jd": jd,
+            "company": company
         })}
 
         Action: generate_acting
@@ -419,7 +419,13 @@ async def analyze_input(text: str):
         Final Answer:
         """
         response = agent_executor.invoke({"input": input_text})
-        return {"question": response["output"]}
+        question_id = chat_history.add(
+            type="question", speaker="agent", content= response["output"]
+        )
+        return {
+            "id": question_id,
+            "content": response["output"],
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
