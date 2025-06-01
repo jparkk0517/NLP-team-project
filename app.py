@@ -9,6 +9,8 @@ from rag_agent.chains.interview_chain import (
     get_followup_chain,
     get_interview_chain,
     get_model_answer_chain,
+    parse_role_from_message,
+    agent_executor
 )
 import logging
 from langchain_community.vectorstores import Chroma
@@ -18,6 +20,7 @@ from langchain.docstore.document import Document
 from uuid import uuid4
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 
+import json
 import os
 import io
 import shutil
@@ -134,6 +137,7 @@ chat_history = ChatHistory()
 
 
 # 로컬 파일 시스템에서 context와 회사 자료 자동 로딩
+# TODO: RAG PyPDF2 -> langchain vector db
 def parse_file_to_text(file_path: str) -> str:
     with open(file_path, "rb") as f:
         content = f.read()
@@ -382,7 +386,49 @@ async def generate_model_answer(questionId: str):
     except Exception as e:
         logger.error(f"Error in model answer generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
 
+@app.post("/")
+async def analyze_input(text: str):
+    try:            
+        resume = base_chain_inputs["resume"]
+        jd = base_chain_inputs["jd"]
+        company = base_chain_inputs["company_infos"]
+        
+        input_text = f"""
+        먼저 이 입력이 어떤 유형인지 판단합니다.
+        입력: '{resume}'
+
+        Action: classify_input
+        Action Input: '{resume}'
+        Observation: 입력이 자소서(resume)로 분류됨
+
+        자소서인 경우에만 reasoning과 acting을 수행합니다.
+
+        Action: generate_reasoning
+        Action Input: {json.dumps({
+            "resume": resume,
+            "jd": jd,
+            "company": company
+        })}
+
+        Action: generate_acting
+        Action Input: '{{reasoning}}'
+
+        Thought: 최종 질문 도출 완료
+        Final Answer:
+        """
+        response = agent_executor.invoke({"input": input_text})
+        question_id = chat_history.add(
+            type="question", speaker="agent", content= response["output"]
+        )
+        return {
+            "id": question_id,
+            "content": response["output"],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
 app.mount("/", StaticFiles(directory=dist_path, html=True), name="frontend")
 
