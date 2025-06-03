@@ -22,6 +22,7 @@ from rag_agent import (
     get_followup_chain,
     get_interview_chain,
     get_model_answer_chain,
+    get_initial_message_chain,
     agent_executor,
 )
 
@@ -37,6 +38,7 @@ stored_resume: Optional[str] = None
 stored_jd: Optional[str] = None
 # 사전 계산된 회사 정보 및 체인 저장 변수
 stored_company_info: Optional[str] = None
+init_message_chain = None
 interview_chain = None
 followup_chain = None
 evaluate_chain = None
@@ -103,7 +105,7 @@ async def init_local_data():
 @app.on_event("startup")
 async def load_local_data():
     await init_local_data()
-    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain, assessment_chain
+    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain, assessment_chain, init_message_chain
     base_dir = os.path.join(os.path.dirname(__file__), "data")
     # 이력서 로딩
     resume_dir = os.path.join(base_dir, "resume")
@@ -135,6 +137,7 @@ async def load_local_data():
     logger.info("Loaded local resume, JD, and company infos.")
     # 사전 계산: 회사 정보와 체인 초기화
     stored_company_info = get_company_info()
+    init_message_chain = get_initial_message_chain()
     interview_chain = get_interview_chain()
     followup_chain = get_followup_chain()
     evaluate_chain = get_evaluate_chain()
@@ -167,6 +170,23 @@ def get_company_info():
 
 @app.get("/chatHistory")
 async def get_chat_history():
+    if not chat_history.history:
+        try:
+            if init_message_chain is None:
+                raise HTTPException(
+                    status_code=500, detail="Initial message chain not initialized."
+                )
+            logger.info("No chat history found. Generating initial message...")
+            response = init_message_chain.invoke({})
+            print(response)
+            logger.info("Chain invocation completed")
+            
+            chat_history.add(
+                type="question", speaker="agent", content=response["result"]
+            )
+            return chat_history.get_all_history()
+        except Exception as e:
+            logger.error(f"Error in question generation: {str(e)}")
     return chat_history.get_all_history()
 
 
@@ -341,21 +361,38 @@ async def analyze_input(text: str):
 
         Action: classify_input
         Action Input: '{resume}'
-        Observation: 입력이 자소서(resume)로 분류됨
+        Observation: 입력 유형에 따라 분기 처리합니다.
+        
+        - 입력이 자소서(resume)인 경우:
+            Action: generate_question_reasoning
+            Action Input: {json.dumps({
+                "resume": resume,
+                "jd": jd,
+                "company": company
+            })}
 
-        자소서인 경우에만 reasoning과 acting을 수행합니다.
+            Action: generate_question_acting
+            Action Input: '{{reasoning}}'
 
-        Action: generate_reasoning
-        Action Input: {json.dumps({
-            "resume": resume,
-            "jd": jd,
-            "company": company
-        })}
+        - 입력이 면접답변(interview_answer)인 경우:
+            Action: evaluate_answer
+            Action Input: {json.dumps({
+                "resume": resume,
+                "jd": jd,
+                "company": company
+            })}
+            
+            Action: generate_acting
+            Action Input: '{{reasoning}}'
 
-        Action: generate_acting
-        Action Input: '{{reasoning}}'
+        - 입력이 일반 텍스트(other)인 경우:
+            Action: translate_to_korean
+            Action Input: '{resume}'
+            
+            Action: generate_acting
+            Action Input: '{{reasoning}}'
 
-        Thought: 최종 질문 도출 완료
+        Thought: 최종 결과 도출 완료
         Final Answer:
         """
         response = agent_executor.invoke({"input": input_text})
