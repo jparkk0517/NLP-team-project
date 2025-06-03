@@ -6,13 +6,13 @@ from .chat_history.ChatHistory import (
 )
 from .chains.interview_chain import (
     classify_input,
-    generate_reasoning,
     agent_executor,
     get_assessment_chain,
     get_evaluate_chain,
     get_followup_chain,
     get_model_answer_chain,
     get_interview_chain,
+    get_initial_message_chain,
 )
 
 __all__ = [
@@ -21,11 +21,11 @@ __all__ = [
     "ContentType",
     "SpeakerType",
     "classify_input",
-    "generate_reasoning",
     "agent_executor",
     "get_assessment_chain",
     "get_evaluate_chain",
     "get_followup_chain",
     "get_model_answer_chain",
     "get_interview_chain",
+    "get_initial_message_chain"
 ]
