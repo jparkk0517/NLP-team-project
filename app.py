@@ -1,23 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
-from typing import Callable, Literal, Optional
+from pydantic import BaseModel
+from typing import Optional
 import uvicorn
-from rag_agent.chains.interview_chain import (
-    get_assessment_chain,
-    get_evaluate_chain,
-    get_followup_chain,
-    get_interview_chain,
-    get_model_answer_chain,
-    parse_role_from_message,
-    agent_executor
-)
 import logging
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.docstore.document import Document
-from uuid import uuid4
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 
 import json
@@ -25,9 +15,15 @@ import os
 import io
 import shutil
 
-# PDF/DOCX 파싱
-import PyPDF2
-import docx
+from rag_agent import (
+    ChatHistory,
+    get_assessment_chain,
+    get_evaluate_chain,
+    get_followup_chain,
+    get_interview_chain,
+    get_model_answer_chain,
+    agent_executor,
+)
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -54,68 +50,6 @@ persist_directory = os.getenv(
     "CHROMA_DB_PATH",
     os.path.join(os.path.dirname(__file__), "rag_agent/vectorstore/chroma_db"),
 )
-
-ContentType = Literal["question", "answer", "modelAnswer", "evaluate"]
-SpeakerType = Literal["agent", "user"]
-
-
-class ChatItem(BaseModel):
-    id: str
-    type: ContentType  # "question" | "answer" | "modelAnswer"
-    speaker: SpeakerType  # "agent" | "user"
-    content: str
-
-
-class ChatHistory(BaseModel):
-    history: list[ChatItem] = []
-
-    def add(self, type: ContentType, speaker: SpeakerType, content: str) -> str:
-        id = str(uuid4().hex[:8])
-        self.history.append(
-            ChatItem(id=id, type=type, speaker=speaker, content=content)
-        )
-        return id
-
-    def get_all_history(self) -> list[ChatItem]:
-        return self.history
-
-    def get_latest_question_id(self) -> Optional[str]:
-        for item in reversed(self.history):
-            if item.type == "question":
-                return item.id
-        return None
-
-    def get_question_by_id(self, question_id: str) -> Optional[ChatItem]:
-        for item in self.history:
-            if item.id == question_id and item.type == "question":
-                return item
-        return None
-
-    def validate_question_exists(self, question_id: str) -> bool:
-        return any(
-            item.id == question_id and item.type == "question" for item in self.history
-        )
-
-    def get_all_history_as_string(self) -> str:
-        return "\n".join(
-            [
-                f"{item.speaker}: {item.content}"
-                for item in self.history
-                if item.type == "question" or item.type == "answer"
-            ]
-        )
-
-    # def add_question(self, question: str):
-    #     self.question_history.append(
-    #         {"question_id": len(self.question_history), "question": question}
-    #     )
-
-    #     return self.question_history[-1]["question_id"]
-
-    # def add_answer(self, question_id: str, answer: str):
-    #     self.answer_history.append({"question_id": question_id, "answer": answer})
-
-    #     return self.answer_history[-1]["question_id"]
 
 
 class AnswerRequest(BaseModel):
@@ -266,7 +200,12 @@ async def submit_answer(request: AnswerRequest):
     if not chat_history.validate_question_exists(question_id):
         raise HTTPException(status_code=404, detail="Cannot find question id.")
 
-    answer_id = chat_history.add(type="answer", speaker="user", content=content)
+    answer_id = chat_history.add(
+        type="answer",
+        speaker="user",
+        content=content,
+        related_chatting_id=question_id,
+    )
     """
     답변 평가 await 
     """
@@ -320,17 +259,8 @@ async def generate_followup(questionId: str):
                 status_code=500, detail="Followup chain not initialized."
             )
 
-        question_item = None
-        answer_item = None
-
-        for idx, item in enumerate(chat_history.history):
-            if item.id == question_id and item.type == "question":
-                question_item = item
-                if idx + 1 < len(chat_history.history):
-                    next_item = chat_history.history[idx + 1]
-                    if next_item.type == "answer":
-                        answer_item = next_item
-                break
+        question_item = chat_history.get_question_by_id(question_id)
+        answer_item = chat_history.get_answer_by_question_id(question_id)
 
         if question_item is None or answer_item is None:
             raise HTTPException(
@@ -386,15 +316,15 @@ async def generate_model_answer(questionId: str):
     except Exception as e:
         logger.error(f"Error in model answer generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 
 @app.post("/")
 async def analyze_input(text: str):
-    try:            
+    try:
         resume = base_chain_inputs["resume"]
         jd = base_chain_inputs["jd"]
         company = base_chain_inputs["company_infos"]
-        
+
         input_text = f"""
         먼저 이 입력이 어떤 유형인지 판단합니다.
         입력: '{resume}'
@@ -420,7 +350,7 @@ async def analyze_input(text: str):
         """
         response = agent_executor.invoke({"input": input_text})
         question_id = chat_history.add(
-            type="question", speaker="agent", content= response["output"]
+            type="question", speaker="agent", content=response["output"]
         )
         return {
             "id": question_id,
@@ -428,7 +358,7 @@ async def analyze_input(text: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 
 app.mount("/", StaticFiles(directory=dist_path, html=True), name="frontend")
 
