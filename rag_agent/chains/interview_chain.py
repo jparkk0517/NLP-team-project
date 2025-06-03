@@ -2,11 +2,22 @@ from pydantic import BaseModel, Field
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
+
 # from .prompt_templates import classify_prompt, reasoning_prompt, acting_prompt
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    BaseMessage,
+    ToolMessage,
+)
 from langchain_core.tools import tool
-from langchain_core.output_parsers import StrOutputParser, CommaSeparatedListOutputParser, JsonOutputParser
+from langchain_core.output_parsers import (
+    StrOutputParser,
+    CommaSeparatedListOutputParser,
+    JsonOutputParser,
+)
 from typing import Callable, Literal, Optional
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import OpenAIEmbeddings
@@ -37,6 +48,7 @@ llm = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY"), temperature=0.7, model_name="gpt-4o"
 )
 
+
 @tool
 def classify_input(input):
     """입력이 자소서인지, 면접답변인지, 일반 텍스트인지 구분합니다."""
@@ -56,15 +68,16 @@ def classify_input(input):
     chain = classify_prompt | llm | JsonOutputParser()
     return chain.invoke({"input": input})
 
+
 @tool
 def generate_reasoning(data):
     """Resumes, Job Descriptions, and Company Info를 기반으로 질문 이유(Reasoning)를 도출"""
-    
+
     data = json.loads(data)
     resume = data["resume"]
     jd = data["jd"]
     company = data["company"]
-    
+
     reasoning_prompt = PromptTemplate.from_template(
         """
         다음은 한 지원자의 자소서, JD(직무기술서), 회사 정보입니다:
@@ -89,11 +102,7 @@ def generate_reasoning(data):
         """
     )
     chain = reasoning_prompt | llm | JsonOutputParser()
-    return chain.invoke({
-        "resume": resume,
-        "jd": jd,
-        "company": company
-    })
+    return chain.invoke({"resume": resume, "jd": jd, "company": company})
 
 
 @tool
@@ -113,42 +122,46 @@ def generate_acting(reasoning):
     chain = acting_prompt | llm | JsonOutputParser()
     return chain.invoke({"reasoning": reasoning})
 
+
 @tool
 def translate_to_korean(text: str) -> str:
     """영어 텍스트를 자연스러운 한국어로 번역합니다."""
-    translate_prompt = PromptTemplate.from_template("""
+    translate_prompt = PromptTemplate.from_template(
+        """
     다음 영어 문장을 자연스러운 한국어로 번역하세요.
 
     영어:
     {text}
 
     한국어:
-    """)
+    """
+    )
     chain = translate_prompt | llm | JsonOutputParser()
     return chain.invoke({"text": text})
 
-tools = [
-    classify_input,
-    generate_reasoning,
-    generate_acting,
-    translate_to_korean
-]
 
-def parse_role_from_message(message: BaseMessage) -> Literal['assistant', 'human', 'system', 'tool', 'unknown']:
+tools = [classify_input, generate_reasoning, generate_acting, translate_to_korean]
+
+
+def parse_role_from_message(
+    message: BaseMessage,
+) -> Literal["assistant", "human", "system", "tool", "unknown"]:
     """Extract role from a message"""
     if isinstance(message, AIMessage):
-        return 'assistant'
+        return "assistant"
     elif isinstance(message, HumanMessage):
-        return 'human'
+        return "human"
     elif isinstance(message, SystemMessage):
-        return 'system'
+        return "system"
     elif isinstance(message, ToolMessage):
-        return 'tool'
+        return "tool"
     else:
-        return 'unknown'
+        return "unknown"
+
 
 # agent = initialize_agent(tools, llm, agent=AgentType.OPENAI_FUNCTIONS, verbose=True)
-prompt = PromptTemplate.from_template("""
+prompt = PromptTemplate.from_template(
+    """
 Answer the following questions as best you can. You have access to the following tools:
 
 {tools}
@@ -168,13 +181,18 @@ Begin!
 
 Question: {input}
 Thought:{agent_scratchpad}
-""")
+"""
+)
 
 agent = create_react_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
+
 def run_interview_question_pipeline(resume: str, jd: str, company: str) -> str:
-    return agent_executor.invoke(f"generate_interview_question(resume='{resume}', jd='{jd}', company='{company}')")
+    return agent_executor.invoke(
+        f"generate_interview_question(resume='{resume}', jd='{jd}', company='{company}')"
+    )
+
 
 def get_interview_chain():
     interview_prompt = PromptTemplate(
@@ -245,12 +263,13 @@ def get_followup_chain():
             이전 질문/답변 쌍들:
             {prev_question_answer_pairs}
 
-            답변은 지원자가 이전에 했던 답변을 요약하고, 그 요약 이후 후속질문을 생성한다.
+            후속 질문은 이전 질문/답변 쌍들을 보면서 면접관이 지원자에게 검증하고자 하는 핵심적인 포인트를 파악하기위한 목적이다.
+            후속 질문은 반드시 지원자의 답변에 대한 후속질문이어야 한다.
+
             """,
     )
 
-    followup_chain = LLMChain(llm=llm, prompt=followup_prompt, output_key="result")
-    return followup_chain
+    return followup_prompt | llm | StrOutputParser()
 
 
 def get_evaluate_chain():
@@ -281,9 +300,7 @@ def get_evaluate_chain():
             답변이 처음 질문에 적합한 답변인지 철저하게 판단해야 한다.
         """,
     )
-
-    evaluate_chain = LLMChain(llm=llm, prompt=evaluate_prompt, output_key="result")
-    return evaluate_chain
+    return evaluate_prompt | llm | StrOutputParser()
 
 
 def get_model_answer_chain():
@@ -316,10 +333,7 @@ def get_model_answer_chain():
         """,
     )
 
-    model_answer_chain = LLMChain(
-        llm=llm, prompt=model_answer_prompt, output_key="result"
-    )
-    return model_answer_chain
+    return model_answer_prompt | llm | StrOutputParser()
 
 
 def get_assessment_chain():

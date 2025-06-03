@@ -46,6 +46,19 @@ class ChatHistory(BaseModel):
                 return item.id
         return None
 
+    def get_chat_history_every_related_by_chatting_id(
+        self, related_chatting_id: str
+    ) -> list[ChatItem]:
+        result = []
+        current_id = related_chatting_id
+        while current_id is not None:
+            item = self.get_question_by_id(current_id)
+            if item is None:
+                break
+            result.append(item)
+            current_id = item.related_chatting_id
+        return result
+
     def get_question_by_id(self, question_id: str) -> Optional[ChatItem]:
         for item in self.history:
             if item.id == question_id and item.type == "question":

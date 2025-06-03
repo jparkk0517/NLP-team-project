@@ -224,7 +224,7 @@ async def submit_answer(request: AnswerRequest):
     chat_history.add(
         type="evaluate",
         speaker="agent",
-        content=evaluate_content["result"],
+        content=evaluate_content,
     )
     return {"id": answer_id, "content": content}
 
@@ -259,30 +259,40 @@ async def generate_followup(questionId: str):
                 status_code=500, detail="Followup chain not initialized."
             )
 
-        question_item = chat_history.get_question_by_id(question_id)
         answer_item = chat_history.get_answer_by_question_id(question_id)
-
-        if question_item is None or answer_item is None:
+        chat_history_every_related = (
+            chat_history.get_chat_history_every_related_by_chatting_id(question_id)
+        )
+        if len(chat_history_every_related) == 0:
             raise HTTPException(
-                status_code=400,
-                detail="No question or answer matching with questionId.",
+                status_code=400, detail="No chat history every related by chatting id."
             )
 
         inputs = {
             **base_chain_inputs,
-            "prev_question_answer_pairs": [
-                {"question": question_item, "answer": answer_item}
-            ],
+            "prev_question_answer_pairs": list(
+                map(
+                    lambda x: {
+                        "type": x.type,
+                        "speaker": x.speaker,
+                        "content": x.content,
+                    },
+                    chat_history_every_related,
+                )
+            ),
         }
 
         response = followup_chain.invoke(inputs)
         question_id = chat_history.add(
-            type="question", speaker="agent", content=response["result"]
+            type="question",
+            speaker="agent",
+            content=response,
+            related_chatting_id=answer_item.id,
         )
         logger.info("Followup generated")
         return {
             "id": question_id,
-            "content": response["result"],
+            "content": response,
         }
     except Exception as e:
         logger.error(f"Error in followup generation: {str(e)}")
@@ -310,9 +320,9 @@ async def generate_model_answer(questionId: str):
             }
         )
         answer_id = chat_history.add(
-            type="modelAnswer", speaker="agent", content=response["result"]
+            type="modelAnswer", speaker="agent", content=response
         )
-        return {"id": answer_id, "content": response["result"]}
+        return {"id": answer_id, "content": response}
     except Exception as e:
         logger.error(f"Error in model answer generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
