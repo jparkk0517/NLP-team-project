@@ -1,6 +1,6 @@
 import { MdOutlineAssessment } from 'react-icons/md';
 import AssessmentPopup from '../../assessment/ui/AssessmentPopup';
-import { Modal } from '../../../shared/Dialog';
+import { Modal } from 'antd';
 import { useState } from 'react';
 
 const ChatHeader = () => {
@@ -19,7 +19,7 @@ const ChatHeader = () => {
       <div className='flex items-center gap-2 text-2xl'>
         <span>면접 Agent</span>
       </div>
-      <Modal open={open} onClose={() => setOpen(false)}>
+      <Modal open={open} onCancel={() => setOpen(false)}>
         <AssessmentPopup />
       </Modal>
     </div>

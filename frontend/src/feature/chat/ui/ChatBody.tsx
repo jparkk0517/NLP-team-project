@@ -21,7 +21,7 @@ const ChatBody = () => {
   return (
     <div
       className='flex flex-col border-b-2 border-gray-300 overflow-scroll flex-grow'
-      style={{ height: 'calc(95% - 100px)' }}>
+      style={{ height: 'calc(85% - 100px)' }}>
       {messages}
       <div ref={chatEndRef} />
     </div>

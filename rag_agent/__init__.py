@@ -14,6 +14,7 @@ from .chains.interview_chain import (
     get_interview_chain,
     get_initial_message_chain,
 )
+from .persona.Persona import Persona
 
 __all__ = [
     "ChatHistory",
@@ -27,5 +28,6 @@ __all__ = [
     "get_followup_chain",
     "get_model_answer_chain",
     "get_interview_chain",
-    "get_initial_message_chain"
+    "get_initial_message_chain",
+    "Persona",
 ]

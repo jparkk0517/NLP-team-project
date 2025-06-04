@@ -1,5 +1,10 @@
 export type ContentType = 'question' | 'answer' | 'modelAnswer' | 'evaluate';
 export type SpeakerType = 'agent' | 'user';
+export type PersonaType =
+  | 'developer'
+  | 'designer'
+  | 'product_manager'
+  | 'other';
 export interface ChatHistoryDTO {
   id: string;
   type: ContentType;
@@ -26,4 +31,12 @@ export interface AssessmentResultDTO {
   coreValueFitScore: number;
   communicationScore: number;
   averageScore: number;
+}
+
+export interface PersonaDTO {
+  id: string;
+  name: string;
+  type: PersonaType;
+  interests?: string[];
+  communicationStyle?: string;
 }
