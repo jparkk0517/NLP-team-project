@@ -2,26 +2,26 @@ from pydantic import BaseModel, Field
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
+
 # from .prompt_templates import classify_prompt, reasoning_prompt, acting_prompt
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    BaseMessage,
+    ToolMessage,
+)
 from langchain_core.tools import tool
-from langchain_core.output_parsers import StrOutputParser, CommaSeparatedListOutputParser, JsonOutputParser
-from typing import Callable, Literal, Optional
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.docstore.document import Document
-from uuid import uuid4
+from langchain_core.output_parsers import (
+    StrOutputParser,
+    JsonOutputParser,
+)
+from typing import Literal
 
 import os
 import logging
-import shutil
 import json
-
-# PDF/DOCX 파싱
-import PyPDF2
-import docx
 
 from dotenv import load_dotenv
 
@@ -36,6 +36,7 @@ logger.info("Starting interview chain initialization...")
 llm = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY"), temperature=0.7, model_name="gpt-4o"
 )
+
 
 @tool
 def classify_input(input):
@@ -56,15 +57,16 @@ def classify_input(input):
     chain = classify_prompt | llm | StrOutputParser()
     return chain.invoke({"input": input})
 
+
 @tool
 def generate_question_reasoning(data):
     """Resumes, Job Descriptions, and Company Info를 기반으로 질문 이유(Reasoning)를 도출"""
-    
+
     data = json.loads(data)
     resume = data["resume"]
     jd = data["jd"]
     company = data["company"]
-    
+
     reasoning_prompt = PromptTemplate.from_template(
         """
         다음은 한 지원자의 자소서, JD(직무기술서), 회사 정보입니다:
@@ -88,13 +90,9 @@ def generate_question_reasoning(data):
         - JD에서 강조한 데이터 분석 경험이 자소서에 일부 존재하나 프로젝트 구체성 부족.
         """
     )
-    
+
     chain = reasoning_prompt | llm | StrOutputParser()
-    return chain.invoke({
-        "resume": resume,
-        "jd": jd,
-        "company": company
-    })
+    return chain.invoke({"resume": resume, "jd": jd, "company": company})
 
 
 @tool
@@ -112,46 +110,55 @@ def generate_question_acting(reasoning):
         협업 경험 중 가장 도전적이었던 상황은 무엇이었나요?
         """
     )
-    
+
     chain = acting_prompt | llm | StrOutputParser()
     return chain.invoke({"reasoning": reasoning})
+
 
 @tool
 def translate_to_korean(text: str) -> str:
     """영어 텍스트를 자연스러운 한국어로 번역합니다."""
-    translate_prompt = PromptTemplate.from_template("""
+    translate_prompt = PromptTemplate.from_template(
+        """
     다음 영어 문장을 자연스러운 한국어로 번역하세요.
 
     영어:
     {text}
 
     한국어:
-    """)
+    """
+    )
     chain = translate_prompt | llm | StrOutputParser()
     return chain.invoke({"text": text})
+
 
 tools = [
     classify_input,
     generate_question_reasoning,
     generate_question_acting,
-    translate_to_korean
+    translate_to_korean,
 ]
 
-def parse_role_from_message(message: BaseMessage) -> Literal['assistant', 'human', 'system', 'tool', 'unknown']:
+
+def parse_role_from_message(
+    message: BaseMessage,
+) -> Literal["assistant", "human", "system", "tool", "unknown"]:
     """Extract role from a message"""
     if isinstance(message, AIMessage):
-        return 'assistant'
+        return "assistant"
     elif isinstance(message, HumanMessage):
-        return 'human'
+        return "human"
     elif isinstance(message, SystemMessage):
-        return 'system'
+        return "system"
     elif isinstance(message, ToolMessage):
-        return 'tool'
+        return "tool"
     else:
-        return 'unknown'
+        return "unknown"
+
 
 # agent = initialize_agent(tools, llm, agent=AgentType.OPENAI_FUNCTIONS, verbose=True)
-prompt = PromptTemplate.from_template("""
+prompt = PromptTemplate.from_template(
+    """
 Answer the following questions as best you can. You have access to the following tools:
 
 {tools}
@@ -171,13 +178,18 @@ Begin!
 
 Question: {input}
 Thought:{agent_scratchpad}
-""")
+"""
+)
 
 agent = create_react_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
+
 def run_interview_question_pipeline(resume: str, jd: str, company: str) -> str:
-    return agent_executor.invoke(f"generate_interview_question(resume='{resume}', jd='{jd}', company='{company}')")
+    return agent_executor.invoke(
+        f"generate_interview_question(resume='{resume}', jd='{jd}', company='{company}')"
+    )
+
 
 def get_interview_chain():
     interview_prompt = PromptTemplate(
@@ -381,6 +393,7 @@ def get_assessment_chain():
     #     llm=llm, prompt=assessment_prompt, output_key="result", parser=parser
     # )
     return assessment_chain
+
 
 def get_initial_message_chain():
     initial_prompt = PromptTemplate(
