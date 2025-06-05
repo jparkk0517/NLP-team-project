@@ -1,6 +1,6 @@
 import { LuPanelRight, LuPanelBottom } from 'react-icons/lu';
 
-import React, { useState, type ReactNode } from 'react';
+import React, { useMemo, useState, type ReactNode } from 'react';
 
 interface PanelProps {
   title: string;
@@ -23,15 +23,32 @@ const Panel: React.FC<PanelProps> = ({
     setIsMinimized(!isMinimized);
   };
 
+  const classNames = useMemo(() => {
+    const classNameList = [
+      'rounded-lg',
+      'm-2',
+      'border-1',
+      'border-gray-600',
+      'overflow-auto',
+    ];
+    if (isMinimized) {
+      classNameList.push(minimizedClassName);
+      if (minimizeDirection === 'horizontal') {
+        classNameList.push('w-15');
+      }
+      if (minimizeDirection === 'vertical') {
+        classNameList.push('h-15');
+      }
+    } else {
+      classNameList.push(className);
+    }
+    return classNameList.join(' ');
+  }, [className, isMinimized, minimizeDirection, minimizedClassName]);
+
   return (
-    <div
-      className={`rounded-lg m-2 border-1 border-gray-600 ${
-        isMinimized ? minimizedClassName : className
-      } ${isMinimized && minimizeDirection === 'horizontal' ? 'w-15' : ''} ${
-        isMinimized && minimizeDirection === 'vertical' ? 'h-15' : ''
-      }`}>
+    <div className={classNames}>
       {/* Title Bar */}
-      <div className='flex items-center justify-between px-4 py-2 border-b border-gray-600'>
+      <div className='h-[5%] flex items-center justify-between px-4 py-2 border-b border-gray-600'>
         {!isMinimized && <h2 className='font-semibold text-base'>{title}</h2>}
 
         <button
@@ -52,7 +69,7 @@ const Panel: React.FC<PanelProps> = ({
       </div>
 
       {/* Body */}
-      {!isMinimized && <div className='p-4 h-full'>{children}</div>}
+      {!isMinimized && <div className='p-4 h-[95%]'>{children}</div>}
     </div>
   );
 };

@@ -84,8 +84,8 @@ const PersonaList = () => {
   const [newPersonaOpen, setNewPersonaOpen] = useState(false);
 
   return (
-    <>
-      <List className='h-full' itemLayout='horizontal'>
+    <div className='h-full'>
+      <List className='' itemLayout='horizontal'>
         {personaList.map((persona, index) => (
           <List.Item>
             <List.Item.Meta
@@ -116,7 +116,7 @@ const PersonaList = () => {
         destroyOnHidden>
         <NewPersonaForm />
       </Modal>
-    </>
+    </div>
   );
 };
 

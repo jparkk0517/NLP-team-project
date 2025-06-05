@@ -6,17 +6,17 @@ import Panel from '../shared/Panel';
 
 const ChatPage = () => {
   return (
-    <div className='flex   justify-between h-full'>
+    <div className='flex justify-between h-[98%] w-[99%]'> 
       <Panel
-        title='면접 Agent'
+        title='Agent list'
         minimizeDirection='horizontal'
         className='w-[20%]'>
         <PersonaList />
       </Panel>
       <Panel
-        title='면접 Agent'
+        title='Chatting'
         minimizeDirection='horizontal'
-        className='w-[80%] h-full'>
+        className='w-[80%]'>
         <ChatHeader />
         <ChatBody />
         <ChatInput />
