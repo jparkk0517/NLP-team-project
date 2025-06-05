@@ -29,7 +29,6 @@ const Panel: React.FC<PanelProps> = ({
       'm-2',
       'border-1',
       'border-gray-600',
-      'overflow-auto',
     ];
     if (isMinimized) {
       classNameList.push(minimizedClassName);
@@ -69,7 +68,8 @@ const Panel: React.FC<PanelProps> = ({
       </div>
 
       {/* Body */}
-      {!isMinimized && <div className='p-4 h-[95%]'>{children}</div>}
+      {!isMinimized && <div className='p-4 h-[95%] 
+      overflow-auto'>{children}</div>}
     </div>
   );
 };

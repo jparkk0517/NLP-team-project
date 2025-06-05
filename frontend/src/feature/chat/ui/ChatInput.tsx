@@ -44,7 +44,7 @@ const ChatInput = () => {
   return (
     <Form
       form={form}
-      className='w-full border-2 border-t-0 border-gray-300 rounded-md p-2 flex flex-col h-fitcontent'
+      className='w-full border-2 border-t-0 border-gray-300 rounded-md p-2 flex flex-col h-[17%]'
       onFinish={handleSubmit}>
       <div className='flex flex-row items-center flex-1 w-full'>
         <Form.Item name='message' colon={false} noStyle>
