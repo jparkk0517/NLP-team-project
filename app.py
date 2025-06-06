@@ -23,6 +23,8 @@ from rag_agent import (
     get_interview_chain,
     get_model_answer_chain,
     get_initial_message_chain,
+    get_reranking_model_answer_chain,
+    compare_model_answers,
     agent_executor,
 )
 
@@ -105,7 +107,7 @@ async def init_local_data():
 @app.on_event("startup")
 async def load_local_data():
     await init_local_data()
-    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain, assessment_chain, init_message_chain
+    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain, assessment_chain, init_message_chain, reranking_model_answer_chain
     base_dir = os.path.join(os.path.dirname(__file__), "data")
     # 이력서 로딩
     resume_dir = os.path.join(base_dir, "resume")
@@ -143,12 +145,14 @@ async def load_local_data():
     evaluate_chain = get_evaluate_chain()
     model_answer_chain = get_model_answer_chain()
     assessment_chain = get_assessment_chain()
+    reranking_model_answer_chain = get_reranking_model_answer_chain()
     base_chain_inputs = {
         "resume": stored_resume,
         "jd": stored_jd,
         "company_infos": stored_company_info,
     }
     logger.info("Precomputed company_info and initialized chains.")
+    
 
 
 def get_company_info():
@@ -321,26 +325,22 @@ async def generate_followup(questionId: str):
 
 @app.get("/modelAnswer")
 async def generate_model_answer(questionId: str):
-    question_id = questionId
-    if chat_history.history is None:
-        raise HTTPException(status_code=400, detail="No chat history yet.")
-    if not chat_history.validate_question_exists(question_id):
-        raise HTTPException(status_code=404, detail="Cannot find question id.")
-
-    question_item = chat_history.get_question_by_id(question_id)
-    if question_item is None:
-        raise HTTPException(status_code=404, detail="Cannot find question data.")
-
     try:
-        # TODO: response <- model_answer_chain 연결 필요
+        question_item = chat_history.get_question_by_id(questionId)
+        if not question_item:
+            raise HTTPException(status_code=404, detail="Question not found.")
+        
         response = model_answer_chain.invoke(
             {
                 **base_chain_inputs,
-                "question": question_item.content,
+                "question": question_item.content
             }
         )
         answer_id = chat_history.add(
-            type="modelAnswer", speaker="agent", content=response["result"]
+            type="modelAnswer",
+            speaker="agent",
+            content=response["result"],
+            related_chatting_id=questionId  # 질문 ID를 related_chatting_id로 설정
         )
         return {"id": answer_id, "content": response["result"]}
     except Exception as e:
@@ -404,6 +404,88 @@ async def analyze_input(text: str):
             "content": response["output"],
         }
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/rerankedModelAnswer")
+async def generate_reranked_model_answer(questionId: str):
+    try:
+        question_item = chat_history.get_question_by_id(questionId)
+        if not question_item:
+            raise HTTPException(status_code=404, detail="Question not found.")
+        
+        # 이전 질문/답변 쌍들 가져오기
+        prev_pairs = []
+        for item in chat_history.history:
+            if item.type == "question" and item.related_chatting_id:
+                answer = next((a for a in chat_history.history if a.id == item.related_chatting_id), None)
+                if answer:
+                    prev_pairs.append({
+                        "question": item.content,
+                        "answer": answer.content
+                    })
+
+        response = reranking_model_answer_chain.invoke(
+            {
+                **base_chain_inputs,
+                "question": question_item.content,
+                "prev_question_answer_pairs": prev_pairs
+            }
+        )
+        answer_id = chat_history.add(
+            type="rerankedModelAnswer",
+            speaker="agent",
+            content=response["result"],
+            related_chatting_id=questionId  # 질문 ID를 related_chatting_id로 설정
+        )
+        return {"id": answer_id, "content": response["result"]}
+    except Exception as e:
+        logger.error(f"Error in reranked model answer generation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/compareModelAnswers")
+async def compare_answers(questionId: str):
+    try:
+        # 디버깅을 위한 로깅 추가
+        logger.info(f"Searching for answers related to questionId: {questionId}")
+        logger.info(f"Current chat history: {[{'type': item.type, 'id': item.id, 'related_id': item.related_chatting_id} for item in chat_history.history]}")
+        
+        # 원본 모델 답변 가져오기
+        original_answer = None
+        for item in chat_history.history:
+            if item.type == "modelAnswer" and item.related_chatting_id == questionId:
+                original_answer = item
+                logger.info(f"Found original answer with id: {item.id}")
+                break
+        
+        if not original_answer:
+            logger.error(f"Original model answer not found for questionId: {questionId}")
+            raise HTTPException(status_code=404, detail="Original model answer not found. Please generate a model answer first using /modelAnswer endpoint.")
+
+        # Reranking된 모델 답변 가져오기
+        reranked_answer = None
+        for item in chat_history.history:
+            if item.type == "rerankedModelAnswer" and item.related_chatting_id == questionId:
+                reranked_answer = item
+                logger.info(f"Found reranked answer with id: {item.id}")
+                break
+
+        if not reranked_answer:
+            logger.error(f"Reranked model answer not found for questionId: {questionId}")
+            raise HTTPException(status_code=404, detail="Reranked model answer not found. Please generate a reranked answer first using /rerankedModelAnswer endpoint.")
+
+        # 답변 비교
+        logger.info("Comparing answers...")
+        comparison_result = compare_model_answers(
+            original_answer.content,
+            reranked_answer.content
+        )
+        logger.info("Comparison completed successfully")
+
+        return comparison_result
+    except Exception as e:
+        logger.error(f"Error in comparing model answers: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

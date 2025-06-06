@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
+from langchain.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 # from .prompt_templates import classify_prompt, reasoning_prompt, acting_prompt
 from langchain.agents import AgentExecutor, create_react_agent
@@ -433,3 +433,125 @@ def get_initial_message_chain():
     )
     initial_chain = LLMChain(llm=llm, prompt=initial_prompt, output_key="result")
     return initial_chain
+
+def get_reranking_model_answer_chain():
+    reranking_prompt = PromptTemplate(
+        input_variables=["resume", "jd", "company_infos", "question", "prev_question_answer_pairs"],
+        template="""
+            역할:
+            당신은 면접관입니다. 주어진 질문에 대해 최적의 답변을 생성해야 합니다.
+            이 답변은 회사의 가치관, 직무 요구사항, 그리고 이력서의 내용을 모두 고려해야 합니다.
+
+            상황:
+            {company_infos}
+
+            이력서:
+            {resume}
+
+            직무 설명:
+            {jd}
+
+            이전 질문/답변 쌍들:
+            {prev_question_answer_pairs}
+
+            현재 질문:
+            {question}
+
+            다음 단계로 답변을 생성하세요:
+            1. 회사의 가치관과 직무 요구사항을 분석
+            2. 이력서에서 관련된 경험과 역량을 찾아 연결
+            3. 이전 대화 맥락을 고려하여 일관성 있는 답변 구성
+            4. 구체적이고 명확한 예시를 포함
+            5. 회사의 가치관과 부합하는 방식으로 답변 마무리
+
+            답변은 한글로 생성해야 한다.
+            """,
+    )
+
+    reranking_chain = LLMChain(llm=llm, prompt=reranking_prompt, output_key="result")
+    return reranking_chain
+
+def compare_model_answers(original_answer: str, reranked_answer: str) -> dict:
+    """두 모델 답변을 비교하는 함수"""
+    comparison_prompt = ChatPromptTemplate.from_messages([
+        ("system", """
+당신은 두 개의 면접 답변을 평가하는 인사 전문가입니다.
+다음 기준에 따라 두 답변을 비교하세요:
+1. 구체성: 예시와 경험이 얼마나 구체적으로 제시되었는가?
+2. 관련성: 답변이 질문과 직무 요구사항에 얼마나 부합하는가?
+3. 구조화: 답변이 얼마나 논리적이고 명확하게 구성되어 있는가?
+4. 회사 적합성: 답변이 회사의 가치관과 문화에 얼마나 부합하는가?
+5. 전문성: 답변이 직무 관련 지식과 역량을 얼마나 잘 보여주는가?
+
+각 기준별로
+- 원본 답변과 reranking 답변 각각 1~10점으로 평가
+- 간단한 설명
+- 어떤 답변이 더 나은지
+
+아래와 같은 JSON 형식으로만 결과를 반환하세요(추가 설명, 코드블록 등 금지):
+{{
+    "specificity": {{
+        "original_score": number,
+        "reranked_score": number,
+        "explanation": string,
+        "better_answer": "original" 또는 "reranked"
+    }},
+    "relevance": {{
+        "original_score": number,
+        "reranked_score": number,
+        "explanation": string,
+        "better_answer": "original" 또는 "reranked"
+    }},
+    "structure": {{
+        "original_score": number,
+        "reranked_score": number,
+        "explanation": string,
+        "better_answer": "original" 또는 "reranked"
+    }},
+    "company_fit": {{
+        "original_score": number,
+        "reranked_score": number,
+        "explanation": string,
+        "better_answer": "original" 또는 "reranked"
+    }},
+    "expertise": {{
+        "original_score": number,
+        "reranked_score": number,
+        "explanation": string,
+        "better_answer": "original" 또는 "reranked"
+    }},
+    "overall": {{
+        "original_total": number,
+        "reranked_total": number,
+        "better_answer": "original" 또는 "reranked",
+        "summary": string
+    }}
+}}
+모든 설명과 결과는 반드시 한국어로 작성하세요.
+"""),
+        ("user", """다음 두 답변을 비교하세요:
+
+원본 답변:
+{original_answer}
+
+Reranking 답변:
+{reranked_answer}""")
+    ])
+
+    chain = comparison_prompt | llm | StrOutputParser()
+    
+    try:
+        result = chain.invoke({
+            "original_answer": original_answer,
+            "reranked_answer": reranked_answer
+        })
+        # 코드블록 등 제거
+        import re
+        result_str = result.strip()
+        # ```json ... ``` 또는 ``` ... ``` 제거
+        result_str = re.sub(r"^```(?:json)?|```$", "", result_str, flags=re.MULTILINE).strip()
+        comparison_result = json.loads(result_str)
+        return comparison_result
+    except Exception as e:
+        logger.error(f"Error in comparing answers: {str(e)}")
+        raise Exception(f"Failed to compare answers: {str(e)}")
