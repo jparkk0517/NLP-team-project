@@ -425,20 +425,43 @@ async def generate_reranked_model_answer(questionId: str):
                         "answer": answer.content
                     })
 
-        response = reranking_model_answer_chain.invoke(
-            {
-                **base_chain_inputs,
-                "question": question_item.content,
-                "prev_question_answer_pairs": prev_pairs
-            }
+        # 원본 모델 답변 가져오기
+        original_answer = next(
+            (item for item in chat_history.history if item.type == "modelAnswer" and item.related_chatting_id == questionId),
+            None
         )
+        if not original_answer:
+            raise HTTPException(status_code=404, detail="Original model answer not found.")
+
+        # reranking 답변 3개 생성
+        reranked_responses = []
+        for _ in range(3):
+            response = reranking_model_answer_chain.invoke(
+                {
+                    **base_chain_inputs,
+                    "question": question_item.content,
+                    "prev_question_answer_pairs": prev_pairs
+                }
+            )
+            reranked_responses.append(response["result"])
+
+        # 각 답변을 원본과 비교하여 점수 계산
+        best_score = -1
+        best_answer = None
+        for answer in reranked_responses:
+            comparison = compare_model_answers(original_answer.content, answer)
+            score = comparison["overall"]["reranked_total"]
+            if score > best_score:
+                best_score = score
+                best_answer = answer
+
         answer_id = chat_history.add(
             type="rerankedModelAnswer",
             speaker="agent",
-            content=response["result"],
-            related_chatting_id=questionId  # 질문 ID를 related_chatting_id로 설정
+            content=best_answer,
+            related_chatting_id=questionId
         )
-        return {"id": answer_id, "content": response["result"]}
+        return {"id": answer_id, "content": best_answer}
     except Exception as e:
         logger.error(f"Error in reranked model answer generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
