@@ -336,13 +336,13 @@ async def generate_model_answer(questionId: str):
         response = model_answer_chain.invoke(
             {
                 **base_chain_inputs,
-                "question": question_item,
+                "question": question_item.content,
             }
         )
         answer_id = chat_history.add(
-            type="modelAnswer", speaker="agent", content=response
+            type="modelAnswer", speaker="agent", content=response["result"]
         )
-        return {"id": answer_id, "content": response}
+        return {"id": answer_id, "content": response["result"]}
     except Exception as e:
         logger.error(f"Error in model answer generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
