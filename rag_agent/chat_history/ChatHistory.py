@@ -1,10 +1,11 @@
 from langchain.prompts import PromptTemplate
 from typing import Literal, Optional, Self
 from uuid import uuid4
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from datetime import datetime
 
 
-ContentType = Literal["question", "answer", "modelAnswer", "evaluate"]
+ContentType = Literal["question", "answer", "modelAnswer", "evaluate", "rerankedModelAnswer"]
 SpeakerType = Literal["agent", "user"]
 
 
@@ -14,6 +15,7 @@ class ChatItem(BaseModel):
     speaker: SpeakerType  # "agent" | "user"
     content: str
     related_chatting_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
 
 
 class ChatHistory(BaseModel):
