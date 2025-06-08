@@ -17,7 +17,6 @@ import shutil
 
 from rag_agent import (
     ChatHistory,
-    get_assessment_chain,
     get_evaluate_chain,
     get_followup_chain,
     get_interview_chain,
@@ -144,7 +143,7 @@ async def load_local_data():
     followup_chain = get_followup_chain()
     evaluate_chain = get_evaluate_chain()
     model_answer_chain = get_model_answer_chain()
-    assessment_chain = get_assessment_chain()
+    # assessment_chain = get_assessment_chain()
     reranking_model_answer_chain = get_reranking_model_answer_chain()
     base_chain_inputs = {
         "resume": stored_resume,

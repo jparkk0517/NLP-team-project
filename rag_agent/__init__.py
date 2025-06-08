@@ -9,7 +9,6 @@ from .chains.interview_chain import (
     get_followup_chain,
     get_evaluate_chain,
     get_model_answer_chain,
-    get_assessment_chain,
     get_initial_message_chain,
     get_reranking_model_answer_chain,
     compare_model_answers,
