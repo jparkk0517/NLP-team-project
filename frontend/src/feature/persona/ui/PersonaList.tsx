@@ -1,14 +1,31 @@
 import { CiCirclePlus } from 'react-icons/ci';
 
-import { Avatar, List, Modal } from 'antd';
-import { useState } from 'react';
+import { Avatar, Button, List, Modal } from 'antd';
+import { useCallback, useState } from 'react';
 import NewPersonaForm from '../../../entity/persona/ui/NewPersonaForm';
 import { usePersonaMutation, usePersona } from '../hook/usePersona';
+import type { PersonaInputDTO } from '../../../shared/type';
 
 const PersonaList = () => {
   const [newPersonaOpen, setNewPersonaOpen] = useState(false);
   const { addPersona, deletePersona } = usePersonaMutation();
   const { data: personaList } = usePersona();
+
+  const handleAddPersona = useCallback(
+    async (persona: PersonaInputDTO) => {
+      addPersona(persona);
+      setNewPersonaOpen(false);
+    },
+    [addPersona]
+  );
+
+  const handleDeletePersona = useCallback(
+    async (personaId: string) => {
+      deletePersona(personaId);
+    },
+    [deletePersona]
+  );
+
   return (
     <div className='h-full'>
       <List className='' itemLayout='horizontal'>
@@ -21,8 +38,16 @@ const PersonaList = () => {
                   style={{ backgroundColor: 'red' }}
                 />
               }
-              title={persona.name}
+              title={`${persona.name} (${persona.type})`}
+              description={persona.interests?.join(', ')}
             />
+            <Button
+              key='delete'
+              type='text'
+              danger
+              onClick={() => handleDeletePersona(persona.id)}>
+              나가기
+            </Button>
           </List.Item>
         ))}
 
@@ -40,7 +65,7 @@ const PersonaList = () => {
         onCancel={() => setNewPersonaOpen(false)}
         footer={null}
         destroyOnHidden>
-        <NewPersonaForm addPersona={addPersona} deletePersona={deletePersona} />
+        <NewPersonaForm addPersona={handleAddPersona} />
       </Modal>
     </div>
   );

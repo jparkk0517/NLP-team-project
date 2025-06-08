@@ -1,15 +1,14 @@
 from typing import List, Optional, Self
+from pydantic import BaseModel, Field
 
-from pydantic import BaseModel
-
-from rag_agent.chat_history.ChatHistory import ChatHistory
+from ..chat_history.ChatHistory import ChatHistory
+from ..chat_history.Singleton import Singleton
 
 # rag_agent.chat_history.ChatHistory는 이 예제에서 직접 사용되지 않지만, 필요시 통합 가능
 # from rag_agent.chat_history.ChatHistory import ChatHistory
 from .Persona import Persona, PersonaType, llm  # Persona 클래스와 LLM 임포트
 from dotenv import load_dotenv
 from langchain.prompts import PromptTemplate
-import os
 from langchain.agents import AgentExecutor, create_react_agent
 
 import json  # JSON 직렬화를 위해 필요
@@ -63,54 +62,46 @@ class PersonaInput(BaseModel):
     communication_style: Optional[str] = None
 
 
-class PersonaService:
-    _instance: Self | None = None
+# --- Agent 구축 ---
+# 1. Agent가 사용할 도구들을 정의합니다.
+# 이 도구들은 위에서 정의한 `@tool` 함수들입니다.
+tools = [
+    # 필요시 다른 도구 추가
+]
 
-    @classmethod
-    def get_instance(cls) -> Self:
-        if not hasattr(cls, "_instance") or cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
+# 2. ReAct Agent를 생성합니다.
+# create_react_agent는 LLM, 도구들, 프롬프트 템플릿을 받아 Agent 체인을 생성합니다.
+agent = create_react_agent(llm, tools, AGENT_BASE_PROMPT)
 
+# 3. AgentExecutor를 생성합니다.
+# AgentExecutor는 Agent를 실행하고, 도구 실행 루프를 관리합니다.
+# verbose=True로 설정하면 Agent의 Thought/Action/Observation 과정을 콘솔에 출력합니다.
+# handle_parsing_errors=True는 LLM이 유효하지 않은 Action/Action Input을 생성했을 때 처리합니다.
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=True,
+    handle_parsing_errors=True,  # 파싱 에러 발생 시 처리
+    # memory=ConversationBufferMemory(memory_key="chat_history", return_messages=True) # 다중 턴 대화 시
+)
+
+
+class PersonaService(Singleton):
     def __init__(self):
-        # 중복 초기화 방지
-        if hasattr(self, "_initialized") and self._initialized:
+        if hasattr(self, "_initialized"):
             return
-
+        self._initialized = True
         self.persona_list: List[Persona] = []
 
-        # --- Agent 구축 ---
-        # 1. Agent가 사용할 도구들을 정의합니다.
-        # 이 도구들은 위에서 정의한 `@tool` 함수들입니다.
-        self.tools = [
-            # 필요시 다른 도구 추가
-        ]
-
-        # 2. ReAct Agent를 생성합니다.
-        # create_react_agent는 LLM, 도구들, 프롬프트 템플릿을 받아 Agent 체인을 생성합니다.
-        self.agent = create_react_agent(llm, self.tools, AGENT_BASE_PROMPT)
-
-        # 3. AgentExecutor를 생성합니다.
-        # AgentExecutor는 Agent를 실행하고, 도구 실행 루프를 관리합니다.
-        # verbose=True로 설정하면 Agent의 Thought/Action/Observation 과정을 콘솔에 출력합니다.
-        # handle_parsing_errors=True는 LLM이 유효하지 않은 Action/Action Input을 생성했을 때 처리합니다.
-        self.agent_executor = AgentExecutor(
-            agent=self.agent,
-            tools=self.tools,
-            verbose=True,
-            handle_parsing_errors=True,  # 파싱 에러 발생 시 처리
-            # memory=ConversationBufferMemory(memory_key="chat_history", return_messages=True) # 다중 턴 대화 시
-        )
-
-        self._initialized = True
-
-    def __new__(cls, *args, **kwargs) -> Self:
-        if not hasattr(cls, "_instance"):
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def add_persona(self, persona: PersonaInput):
-        self.persona_list.append(persona)
+        self.persona_list.append(
+            Persona(
+                type=persona.type,
+                name=persona.name,
+                interests=persona.interests,
+                communication_style=persona.communication_style,
+            )
+        )
 
     def get_persona_list(self) -> List[Persona]:
         return self.persona_list
@@ -125,7 +116,7 @@ class PersonaService:
         return None
 
     def get_all_persona_info(self) -> str:
-        return json.dumps([p.to_dict() for p in self.persona_list], ensure_ascii=False)
+        return [p.get_persona_info() if p else None for p in self.persona_list]
 
     async def invoke_agent(
         self,
@@ -173,7 +164,7 @@ class PersonaService:
             }
 
             # AgentExecutor.ainvoke를 호출합니다.
-            result = await self.agent_executor.ainvoke(full_input_to_agent)
+            result = await agent_executor.ainvoke(full_input_to_agent)
 
             # AgentExecutor의 결과는 딕셔너리 형태로 반환되며, 최종 답변은 'output' 키에 있습니다.
             final_answer = result.get("output", "Agent가 답변을 생성하지 못했습니다.")

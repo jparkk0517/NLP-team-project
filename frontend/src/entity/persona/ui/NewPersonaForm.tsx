@@ -8,14 +8,12 @@ import type {
 type PersonaForm = Omit<PersonaDTO, 'id'>;
 
 interface NewPersonaFormProps {
-  addPersona: (persona: PersonaInputDTO) => Promise<PersonaDTO[]>;
-  deletePersona: (personaId: string) => Promise<PersonaDTO[]>;
+  addPersona: (persona: PersonaInputDTO) => Promise<void>;
 }
 
 const NewPersonaForm = ({ addPersona }: NewPersonaFormProps) => {
   const [form] = Form.useForm<PersonaForm>();
   const handleSubmit = (values: PersonaForm) => {
-    console.log(values);
     addPersona(values);
   };
 

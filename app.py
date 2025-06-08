@@ -12,7 +12,6 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader
 
 import json
 import os
-import io
 import shutil
 
 from rag_agent import (
@@ -59,6 +58,8 @@ persist_directory = os.getenv(
 
 
 chat_history = ChatHistory.get_instance()
+persona_service = PersonaService.get_instance()
+print(ChatHistory.get_instance(), PersonaService.get_instance())
 
 
 # 로컬 파일 시스템에서 context와 회사 자료 자동 로딩
@@ -390,7 +391,7 @@ async def analyze_input(request: RequestInput):
                 "resume": resume,
                 "jd": jd,
                 "company": company
-            })}
+            },default=str)}
             Observation: 평가 결과
             
             Thought: 만약 평가 결과 평균 점수가 5점 이하 또는 답변이 구체적이지 않거나 추가 질문이 필요하다면, 다음과 같이 진행하세요.
@@ -418,9 +419,6 @@ async def analyze_input(request: RequestInput):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-persona_service = PersonaService.get_instance()
-
-
 @app.get("/persona/list")
 async def get_persona_list():
     return persona_service.get_all_persona_info()
@@ -429,13 +427,13 @@ async def get_persona_list():
 @app.post("/persona")
 async def add_persona(persona: PersonaInput):
     persona_service.add_persona(persona)
-    return persona_service.get_all_persona_info()
+    return None
 
 
 @app.delete("/persona/{persona_id}")
 async def delete_persona(persona_id: str):
     persona_service.delete_persona(persona_id)
-    return persona_service.get_all_persona_info()
+    return None
 
 
 @app.get("/rerankedModelAnswer")

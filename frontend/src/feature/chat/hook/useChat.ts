@@ -41,18 +41,12 @@ const useChatHistory = () => {
 };
 
 const useRequest = () => {
-  const { mutateAsync, data } = useMutation({
+  const { mutateAsync } = useMutation({
     mutationFn: async (data: RequestInputDTO) => {
       return await Api.POST<RequestInputDTO, ChatHistoryDTO[]>('/', data);
     },
   });
 
-  const { setLastMessage, setLastQuestionId } = useChatStore(
-    useShallow((state) => ({
-      setLastMessage: state.setLastMessage,
-      setLastQuestionId: state.setLastQuestionId,
-    }))
-  );
   const followUpQuestion = useCallback(
     async (questionId: string) => {
       try {
@@ -108,15 +102,6 @@ const useRequest = () => {
     },
     [mutateAsync]
   );
-
-  useEffect(() => {
-    const lastMessage = data?.[data.length - 1];
-    const lastQuestionId = [...(data ?? [])]
-      .reverse()
-      .find((item) => item.type === 'question')?.id;
-    setLastMessage(lastMessage);
-    setLastQuestionId(lastQuestionId);
-  }, [data, setLastMessage, setLastQuestionId]);
 
   return {
     followUpQuestion,

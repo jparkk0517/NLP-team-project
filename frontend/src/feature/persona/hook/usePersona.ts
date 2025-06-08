@@ -14,16 +14,16 @@ const usePersonaMutation = () => {
   const { mutateAsync: addPersona } = useMutation({
     mutationFn: (persona: PersonaInputDTO) =>
       Api.POST<PersonaInputDTO, PersonaDTO[]>('/persona', persona),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['personaList'], data);
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personaList'] });
     },
   });
 
   const { mutateAsync: deletePersona } = useMutation({
     mutationFn: (personaId: string) =>
       Api.DELETE<PersonaDTO[]>(`/persona/${personaId}`),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['personaList'], data);
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personaList'] });
     },
   });
 

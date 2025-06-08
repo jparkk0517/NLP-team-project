@@ -5,7 +5,6 @@ from langchain_core.output_parsers import (
 from typing import Literal, Optional
 
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel
 from dotenv import load_dotenv
 from langchain.prompts import PromptTemplate
 import os
@@ -20,7 +19,7 @@ llm = ChatOpenAI(
 )
 
 
-class Persona(BaseModel):
+class Persona:
     """
     면접 에이전트의 Persona
     """
@@ -30,6 +29,7 @@ class Persona(BaseModel):
     name: str
     interests: Optional[list[str]] = None
     communication_style: Optional[str] = None
+    pesrona_prompt: PromptTemplate
 
     def __init__(
         self,
@@ -38,18 +38,21 @@ class Persona(BaseModel):
         interests: Optional[list[str]] = None,
         communication_style: Optional[str] = None,
     ):
-        self.id = str(uuid4().hex[:8])
+        # Generate id and initialize BaseModel fields
+        id_str = str(uuid4().hex[:8])
+        self.id = id_str
         self.type = type
         self.name = name
         self.interests = interests
         self.communication_style = communication_style
+        # Initialize persona prompt
         self.pesrona_prompt = PromptTemplate(
             template=f"""
             [역할]
             당신은 {type}의 면접관 {name}입니다.
             당신은 면접관으로 면접장에 위치해 있으며 당신의 앞에는 지원자가 있습니다.
             당신은 {communication_style} 방식으로 지원자와 대화합니다.
-            당신은 평소 {", ".join([interest for interest in interests])}에 관심이 있습니다.
+            당신은 평소 {", ".join(interests or [])}에 관심이 있습니다.
             """,
         )
 

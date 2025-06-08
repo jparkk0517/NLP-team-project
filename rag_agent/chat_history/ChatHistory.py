@@ -3,6 +3,7 @@ from typing import Literal, Optional, Self
 from uuid import uuid4
 from pydantic import BaseModel, Field
 from datetime import datetime
+from ..chat_history.Singleton import Singleton
 
 
 ContentType = Literal[
@@ -20,25 +21,12 @@ class ChatItem(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
 
-class ChatHistory(BaseModel):
-    _instance: Self | None = None  # _instance를 Self | None 타입으로 명시
-    history: list[ChatItem] = []
-
-    @classmethod
-    def get_instance(cls) -> Self:
-        if not hasattr(cls, "_instance") or cls._instance is None:  # None 체크 추가
-            cls._instance = cls()
-        return cls._instance
-
-    def __new__(cls, *args, **kwargs) -> Self:
-        if not hasattr(cls, "_instance"):
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
+class ChatHistory(Singleton):
     def __init__(self):
-        if not hasattr(self, "_initialized"):  # 중복 초기화 방지
-            self.history = []
-            self._initialized = True  # 초기화 완료 플래그
+        if hasattr(self, "_initialized"):
+            return
+        self._initialized = True
+        self.history = []
 
     def add(
         self,
