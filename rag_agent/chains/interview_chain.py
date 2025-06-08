@@ -1,31 +1,22 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
+from langchain.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-# from .prompt_templates import classify_prompt, reasoning_prompt, acting_prompt
-from langchain.agents import AgentExecutor
-from langchain.agents import create_react_agent
-
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage, ToolMessage
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    BaseMessage,
+    ToolMessage,
+)
 from langchain_core.tools import tool
-from langchain.memory import ConversationBufferMemory
-from langchain_core.output_parsers import StrOutputParser, CommaSeparatedListOutputParser, JsonOutputParser
-from typing import Callable, Literal, Optional
-from langchain_core.runnables import RunnableLambda
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.docstore.document import Document
-from uuid import uuid4
-
+from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
+from typing import Literal
 import os
 import logging
-import shutil
 import json
 
-# PDF/DOCX 파싱
-import PyPDF2
-import docx
 
 from dotenv import load_dotenv
 
@@ -34,6 +25,7 @@ load_dotenv()
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 @tool
 def classify_input(input):
@@ -54,15 +46,16 @@ def classify_input(input):
     chain = classify_prompt | llm | StrOutputParser()
     return chain.invoke({"input": input})
 
+
 @tool
 def generate_question_reasoning(data):
     """Resumes, Job Descriptions, and Company Info를 기반으로 질문 이유(Reasoning)를 도출"""
-    
+
     data = json.loads(data)
     resume = data["resume"]
     jd = data["jd"]
     company = data["company"]
-    
+
     reasoning_prompt = PromptTemplate.from_template(
         """
         다음은 한 지원자의 자소서, JD(직무기술서), 회사 정보입니다:
@@ -86,13 +79,9 @@ def generate_question_reasoning(data):
         - JD에서 강조한 데이터 분석 경험이 자소서에 일부 존재하나 프로젝트 구체성 부족.
         """
     )
-    
+
     chain = reasoning_prompt | llm | StrOutputParser()
-    return chain.invoke({
-        "resume": resume,
-        "jd": jd,
-        "company": company
-    })
+    return chain.invoke({"resume": resume, "jd": jd, "company": company})
 
 
 @tool
@@ -110,14 +99,15 @@ def generate_question_acting(reasoning):
         협업 경험 중 가장 도전적이었던 상황은 무엇이었나요?
         """
     )
-    
+
     chain = acting_prompt | llm | StrOutputParser()
     return chain.invoke({"reasoning": reasoning})
+
 
 @tool
 def generate_followup_reasoning(input_text):
     """지원자의 답변에 대한 꼬리질문 생성을 위해 지원자 답변 및 이전 대화내용을 기반으로 꼬리질문 이유(Reasoning) 도출"""
-    
+
     reasoning_prompt = PromptTemplate.from_template(
         """
         아래는 AI 면접 시스템에서 지금까지 진행된 질문과 지원자의 답변입니다:
@@ -132,11 +122,11 @@ def generate_followup_reasoning(input_text):
         예를 들어, 지원자의 말 중 구체적이지 않은 부분을 짚거나, 경험의 진정성, 추가 설명이 필요한 포인트를 찾아내세요.
         """
     )
-    
+
     chain = reasoning_prompt | llm | StrOutputParser()
-    return chain.invoke({
-    })
-    
+    return chain.invoke({})
+
+
 @tool
 def generate_followup_acting(reasoning, input_text):
     """Reasoning과 사용자의 답변을 기반으로 꼬리질문 생성"""
@@ -159,14 +149,13 @@ def generate_followup_acting(reasoning, input_text):
 
     chain = prompt | llm | StrOutputParser()
 
-    return chain.invoke({
-        "reasoning": reasoning,
-        "input_text": input_text
-    })
+    return chain.invoke({"reasoning": reasoning, "input_text": input_text})
+
 
 @tool
 def evaluate_answer(data):
     """지원자 답변을 평가"""
+
     class AssessmentResult(BaseModel):
         logicScore: int
         jobFitScore: int
@@ -175,7 +164,7 @@ def evaluate_answer(data):
         averageScore: float
 
     parser = JsonOutputParser(pydantic_object=AssessmentResult)
-    
+
     data = json.loads(data)
     resume = data["resume"]
     jd = data["jd"]
@@ -229,50 +218,61 @@ def evaluate_answer(data):
 
     chain = assessment_prompt | llm | parser
 
-    return chain.invoke({
-        "jd": jd,
-        "resume": resume,
-        "company": company,
-        "question": question,
-        "answer": answer
-    })
-    
+    return chain.invoke(
+        {
+            "jd": jd,
+            "resume": resume,
+            "company": company,
+            "question": question,
+            "answer": answer,
+        }
+    )
+
+
 @tool
 def translate_to_korean(text: str) -> str:
     """영어 텍스트를 자연스러운 한국어로 번역합니다."""
-    translate_prompt = PromptTemplate.from_template("""
+    translate_prompt = PromptTemplate.from_template(
+        """
     다음 영어 문장을 자연스러운 한국어로 번역하세요.
 
     영어:
     {text}
 
     한국어:
-    """)
+    """
+    )
     chain = translate_prompt | llm | StrOutputParser()
     return chain.invoke({"text": text})
+
 
 tools = [
     classify_input,
     generate_question_reasoning,
     generate_question_acting,
-    translate_to_korean
+    translate_to_korean,
 ]
 
-def parse_role_from_message(message: BaseMessage) -> Literal['assistant', 'human', 'system', 'tool', 'unknown']:
+
+def parse_role_from_message(
+    message: BaseMessage,
+) -> Literal["assistant", "human", "system", "tool", "unknown"]:
     """Extract role from a message"""
     if isinstance(message, AIMessage):
-        return 'assistant'
+        return "assistant"
     elif isinstance(message, HumanMessage):
-        return 'human'
+        return "human"
     elif isinstance(message, SystemMessage):
-        return 'system'
+        return "system"
     elif isinstance(message, ToolMessage):
-        return 'tool'
+        return "tool"
     else:
-        return 'unknown'
+        return "unknown"
+
 
 # agent = initialize_agent(tools, llm, agent=AgentType.OPENAI_FUNCTIONS, verbose=True)
-prompt = PromptTemplate.from_template("""
+prompt = PromptTemplate.from_template(
+    """
 Answer the following questions as best you can. You have access to the following tools:
 
 {tools}
@@ -292,7 +292,8 @@ Begin!
 
 Question: {input}
 Thought: {agent_scratchpad}
-""")
+"""
+)
 
 # LLM 초기화
 logger.info("Starting interview chain initialization...")
@@ -305,8 +306,12 @@ agent = create_react_agent(llm, tools, prompt)
 
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
+
 def run_interview_question_pipeline(resume: str, jd: str, company: str) -> str:
-    return agent_executor.invoke(f"generate_interview_question(resume='{resume}', jd='{jd}', company='{company}')")
+    return agent_executor.invoke(
+        f"generate_interview_question(resume='{resume}', jd='{jd}', company='{company}')"
+    )
+
 
 def get_interview_chain():
     interview_prompt = PromptTemplate(
@@ -444,6 +449,26 @@ def get_model_answer_chain():
 
             모델 답변:
             위 상황에서 지원자가 주어진 질문에 대한 최선의 답변을 생성해야 한다.
+            답변은 다음 형식을 따라야 합니다:
+
+            1. STAR 기법을 활용한 구조화된 답변:
+               - Situation: 상황 설명
+               - Task: 해결해야 할 과제
+               - Action: 취한 행동
+               - Result: 결과와 배운 점
+
+            2. 직무 관련성:
+               - JD에서 요구하는 역량과의 연관성
+               - 회사의 핵심 가치와의 부합성
+
+            3. 구체성:
+               - 구체적인 숫자와 데이터 포함
+               - 실제 경험 기반의 예시
+
+            4. 논리성:
+               - 명확한 인과관계
+               - 체계적인 설명
+
             답변은 한글로 생성해야 한다.
         """,
     )
@@ -452,6 +477,7 @@ def get_model_answer_chain():
         llm=llm, prompt=model_answer_prompt, output_key="result"
     )
     return model_answer_chain
+
 
 def get_initial_message_chain():
     initial_prompt = PromptTemplate(
@@ -482,5 +508,145 @@ def get_initial_message_chain():
         입력하신 내용을 바탕으로 면접 질문을 생성하고 면접을 시작해보겠습니다. 🔥
         """
     )
-    initial_chain = initial_prompt | llm | StrOutputParser()
+    initial_chain = LLMChain(llm=llm, prompt=initial_prompt, output_key="result")
     return initial_chain
+
+
+def get_reranking_model_answer_chain():
+    reranking_prompt = PromptTemplate(
+        input_variables=[
+            "resume",
+            "jd",
+            "company_infos",
+            "question",
+            "prev_question_answer_pairs",
+        ],
+        template="""
+            역할:
+            당신은 면접관입니다. 주어진 질문에 대해 최적의 답변을 생성해야 합니다.
+            이 답변은 회사의 가치관, 직무 요구사항, 그리고 이력서의 내용을 모두 고려해야 합니다.
+
+            상황:
+            {company_infos}
+
+            이력서:
+            {resume}
+
+            직무 설명:
+            {jd}
+
+            이전 질문/답변 쌍들:
+            {prev_question_answer_pairs}
+
+            현재 질문:
+            {question}
+
+            다음 단계로 답변을 생성하세요:
+            1. 회사의 가치관과 직무 요구사항을 분석
+            2. 이력서에서 관련된 경험과 역량을 찾아 연결
+            3. 이전 대화 맥락을 고려하여 일관성 있는 답변 구성
+            4. 구체적이고 명확한 예시를 포함
+            5. 회사의 가치관과 부합하는 방식으로 답변 마무리
+
+            답변은 한글로 생성해야 한다.
+            """,
+    )
+
+    reranking_chain = LLMChain(llm=llm, prompt=reranking_prompt, output_key="result")
+    return reranking_chain
+
+
+def compare_model_answers(original_answer: str, reranked_answer: str) -> dict:
+    """두 모델 답변을 비교하는 함수"""
+    comparison_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                """
+당신은 두 개의 면접 답변을 평가하는 인사 전문가입니다.
+다음 기준에 따라 두 답변을 비교하세요:
+1. 구체성: 예시와 경험이 얼마나 구체적으로 제시되었는가?
+2. 관련성: 답변이 질문과 직무 요구사항에 얼마나 부합하는가?
+3. 구조화: 답변이 얼마나 논리적이고 명확하게 구성되어 있는가?
+4. 회사 적합성: 답변이 회사의 가치관과 문화에 얼마나 부합하는가?
+5. 전문성: 답변이 직무 관련 지식과 역량을 얼마나 잘 보여주는가?
+
+각 기준별로
+- 원본 답변과 reranking 답변 각각 1~10점으로 평가
+- 간단한 설명
+- 어떤 답변이 더 나은지
+
+아래와 같은 JSON 형식으로만 결과를 반환하세요(추가 설명, 코드블록 등 금지):
+{{
+    "specificity": {{
+        "original_score": number,
+        "reranked_score": number,
+        "explanation": string,
+        "better_answer": "original" 또는 "reranked"
+    }},
+    "relevance": {{
+        "original_score": number,
+        "reranked_score": number,
+        "explanation": string,
+        "better_answer": "original" 또는 "reranked"
+    }},
+    "structure": {{
+        "original_score": number,
+        "reranked_score": number,
+        "explanation": string,
+        "better_answer": "original" 또는 "reranked"
+    }},
+    "company_fit": {{
+        "original_score": number,
+        "reranked_score": number,
+        "explanation": string,
+        "better_answer": "original" 또는 "reranked"
+    }},
+    "expertise": {{
+        "original_score": number,
+        "reranked_score": number,
+        "explanation": string,
+        "better_answer": "original" 또는 "reranked"
+    }},
+    "overall": {{
+        "original_total": number,
+        "reranked_total": number,
+        "better_answer": "original" 또는 "reranked",
+        "summary": string
+    }}
+}}
+모든 설명과 결과는 반드시 한국어로 작성하세요.
+""",
+            ),
+            (
+                "user",
+                """다음 두 답변을 비교하세요:
+
+원본 답변:
+{original_answer}
+
+Reranking 답변:
+{reranked_answer}""",
+            ),
+        ]
+    )
+
+    chain = comparison_prompt | llm | StrOutputParser()
+
+    try:
+        result = chain.invoke(
+            {"original_answer": original_answer, "reranked_answer": reranked_answer}
+        )
+        # 코드블록 등 제거
+        import re
+
+        result_str = result.strip()
+        # ```json ... ``` 또는 ``` ... ``` 제거
+        result_str = re.sub(
+            r"^```(?:json)?|```$", "", result_str, flags=re.MULTILINE
+        ).strip()
+        comparison_result = json.loads(result_str)
+        return comparison_result
+    except Exception as e:
+        logger.error(f"Error in comparing answers: {str(e)}")
+        raise Exception(f"Failed to compare answers: {str(e)}")
