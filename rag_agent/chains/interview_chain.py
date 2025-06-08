@@ -3,11 +3,15 @@ from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 # from .prompt_templates import classify_prompt, reasoning_prompt, acting_prompt
-from langchain.agents import AgentExecutor, create_react_agent
+from langchain.agents import AgentExecutor
+from langchain.agents import create_react_agent
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage, ToolMessage
 from langchain_core.tools import tool
+from langchain.memory import ConversationBufferMemory
 from langchain_core.output_parsers import StrOutputParser, CommaSeparatedListOutputParser, JsonOutputParser
 from typing import Callable, Literal, Optional
+from langchain_core.runnables import RunnableLambda
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
@@ -30,12 +34,6 @@ load_dotenv()
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# LLM 초기화
-logger.info("Starting interview chain initialization...")
-llm = ChatOpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"), temperature=0.7, model_name="gpt-4o"
-)
 
 @tool
 def classify_input(input):
@@ -117,6 +115,129 @@ def generate_question_acting(reasoning):
     return chain.invoke({"reasoning": reasoning})
 
 @tool
+def generate_followup_reasoning(input_text):
+    """지원자의 답변에 대한 꼬리질문 생성을 위해 지원자 답변 및 이전 대화내용을 기반으로 꼬리질문 이유(Reasoning) 도출"""
+    
+    reasoning_prompt = PromptTemplate.from_template(
+        """
+        아래는 AI 면접 시스템에서 지금까지 진행된 질문과 지원자의 답변입니다:
+
+        대화 이력:
+        {chat_history}
+
+        현재 질문에 대한 지원자의 답변은 다음과 같습니다:
+        "{input_text}"
+
+        이 답변을 바탕으로 다음 꼬리질문을 이어가려는 면접관의 Reasoning을 작성하세요.
+        예를 들어, 지원자의 말 중 구체적이지 않은 부분을 짚거나, 경험의 진정성, 추가 설명이 필요한 포인트를 찾아내세요.
+        """
+    )
+    
+    chain = reasoning_prompt | llm | StrOutputParser()
+    return chain.invoke({
+    })
+    
+@tool
+def generate_followup_acting(reasoning, input_text):
+    """Reasoning과 사용자의 답변을 기반으로 꼬리질문 생성"""
+
+    prompt = PromptTemplate.from_template(
+        """
+        아래는 지원자의 답변과 그에 대한 면접관의 추론(Reasoning)입니다.
+
+        [지원자 답변]
+        {input_text}
+
+        [면접관의 Reasoning]
+        {reasoning}
+
+        위 Reasoning을 바탕으로 다음 꼬리질문을 작성하세요.
+        질문은 면접에서 실제로 사용할 수 있도록 자연스럽고 구체적으로 표현하세요.
+        한 문장으로 작성하세요.
+        """
+    )
+
+    chain = prompt | llm | StrOutputParser()
+
+    return chain.invoke({
+        "reasoning": reasoning,
+        "input_text": input_text
+    })
+
+@tool
+def evaluate_answer(data):
+    """지원자 답변을 평가"""
+    class AssessmentResult(BaseModel):
+        logicScore: int
+        jobFitScore: int
+        coreValueFitScore: int
+        communicationScore: int
+        averageScore: float
+
+    parser = JsonOutputParser(pydantic_object=AssessmentResult)
+    
+    data = json.loads(data)
+    resume = data["resume"]
+    jd = data["jd"]
+    company = data["company"]
+    question = data["question"]
+    answer = data["answer"]
+
+    assessment_prompt = PromptTemplate(
+        input_variables=["resume", "jd", "company", "chat_history"],
+        template="""
+            역할:
+            당신은 면접관입니다. 지원자의 답변을 듣고 다음 질문을 생성해야 합니다.
+            지원자가 답변한 내용이 처음 질문에 적합한 답변인지 철저하게 판단하고, 그 판단에 의거해서 후속질문을 만들어야 한다.
+
+            상황:
+            당신이 보고있는 화면에는 지원자가 지원한 직무 JD, 지원자의 RESUME 등이 있는 상황입니다.
+            이 면접자가 해당 직무의 담당자로 입사해서 충분한 역할을 하고, 회사와 함께 성장할 수 있는지 판단하기 위해 지원자를 검증해야합니다.
+
+            직무 설명:
+            {jd}
+
+            이력서:
+            {resume}
+
+            회사 자료:
+            {company}
+
+            이전 질문: 
+            {question}
+            
+            지원자의 답변:
+            {answer}
+            
+            위 질문/답변 내용들을 바탕으로 
+            현재 지원자가 다음 항목들에 대하여 얼마나 잘 답변했는지 평가해야 한다.
+            평가 결과는 0~10점 사이의 점수로 표현해야 한다.
+            평가 결과는 논리성, 직무적합성, 핵심가치 부합성, 커뮤니케이션 능력 4가지 항목에 대하여 평가해야 한다.
+            평가 결과는 평균 점수도 함께 표현해야 한다.
+
+
+            평가 결과는 JSON 형식으로 표현해야 한다.
+            결과 예시 : {{
+                "logicScore": 7,
+                "jobFitScore": 6,
+                "coreValueFitScore": 3,
+                "communicationScore": 7,
+                "averageScore": 5.6,
+            }}
+        """,
+    )
+
+    chain = assessment_prompt | llm | parser
+
+    return chain.invoke({
+        "jd": jd,
+        "resume": resume,
+        "company": company,
+        "question": question,
+        "answer": answer
+    })
+    
+@tool
 def translate_to_korean(text: str) -> str:
     """영어 텍스트를 자연스러운 한국어로 번역합니다."""
     translate_prompt = PromptTemplate.from_template("""
@@ -170,10 +291,18 @@ Final Answer: the final answer to the original input question
 Begin!
 
 Question: {input}
-Thought:{agent_scratchpad}
+Thought: {agent_scratchpad}
 """)
 
+# LLM 초기화
+logger.info("Starting interview chain initialization...")
+llm = ChatOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"), temperature=0.7, model_name="gpt-4o-mini"
+)
+
+# memory = MemorySaver()
 agent = create_react_agent(llm, tools, prompt)
+
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 def run_interview_question_pipeline(resume: str, jd: str, company: str) -> str:
@@ -324,64 +453,6 @@ def get_model_answer_chain():
     )
     return model_answer_chain
 
-
-def get_assessment_chain():
-    class AssessmentResult(BaseModel):
-        logicScore: int
-        jobFitScore: int
-        coreValueFitScore: int
-        communicationScore: int
-        averageScore: float
-
-    parser = JsonOutputParser(pydantic_object=AssessmentResult)
-
-    assessment_prompt = PromptTemplate(
-        input_variables=["resume", "jd", "company_infos", "chat_history"],
-        template="""
-            역할:
-            당신은 면접관입니다. 지원자의 답변을 듣고 다음 질문을 생성해야 합니다.
-            지원자가 답변한 내용이 처음 질문에 적합한 답변인지 철저하게 판단하고, 그 판단에 의거해서 후속질문을 만들어야 한다.
-
-            상황:
-            당신이 보고있는 화면에는 지원자가 지원한 직무 JD, 지원자의 RESUME 등이 있는 상황입니다.
-            이 면접자가 해당 직무의 담당자로 입사해서 충분한 역할을 하고, 회사와 함께 성장할 수 있는지 판단하기 위해 지원자를 검증해야합니다.
-
-            직무 설명:
-            {jd}
-
-            이력서:
-            {resume}
-
-            회사 자료:
-            {company_infos}
-
-            이전 질문/답변 : 
-            {chat_history}
-            
-            위 질문/답변 내용들을 바탕으로 
-            현재 지원자가 다음 항목들에 대하여 얼마나 잘 답변했는지 평가해야 한다.
-            평가 결과는 0~10점 사이의 점수로 표현해야 한다.
-            평가 결과는 논리성, 직무적합성, 핵심가치 부합성, 커뮤니케이션 능력 4가지 항목에 대하여 평가해야 한다.
-            평가 결과는 평균 점수도 함께 표현해야 한다.
-
-
-            평가 결과는 JSON 형식으로 표현해야 한다.
-            결과 예시 : {{
-                "logicScore": 7,
-                "jobFitScore": 6,
-                "coreValueFitScore": 3,
-                "communicationScore": 7,
-                "averageScore": 5.6,
-            }}
-        """,
-    )
-
-    assessment_chain = assessment_prompt | llm | parser
-    # LLMChain(
-    #     llm=llm, prompt=assessment_prompt, output_key="result", parser=parser
-    # )
-    return assessment_chain
-
 def get_initial_message_chain():
     initial_prompt = PromptTemplate(
         template="""
@@ -411,5 +482,5 @@ def get_initial_message_chain():
         입력하신 내용을 바탕으로 면접 질문을 생성하고 면접을 시작해보겠습니다. 🔥
         """
     )
-    initial_chain = LLMChain(llm=llm, prompt=initial_prompt, output_key="result")
+    initial_chain = initial_prompt | llm | StrOutputParser()
     return initial_chain

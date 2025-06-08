@@ -7,7 +7,6 @@ from .chat_history.ChatHistory import (
 from .chains.interview_chain import (
     classify_input,
     agent_executor,
-    get_assessment_chain,
     get_evaluate_chain,
     get_followup_chain,
     get_model_answer_chain,
@@ -22,7 +21,6 @@ __all__ = [
     "SpeakerType",
     "classify_input",
     "agent_executor",
-    "get_assessment_chain",
     "get_evaluate_chain",
     "get_followup_chain",
     "get_model_answer_chain",
