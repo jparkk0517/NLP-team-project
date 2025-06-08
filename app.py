@@ -69,7 +69,7 @@ class Answer(BaseModel):
     content: str
 
 
-chat_history = ChatHistory()
+chat_history = ChatHistory.get_instance()
 
 
 # 로컬 파일 시스템에서 context와 회사 자료 자동 로딩
@@ -180,7 +180,7 @@ async def get_chat_history():
             response = init_message_chain.invoke({})
             print(response)
             logger.info("Chain invocation completed")
-            
+
             chat_history.add(
                 type="question", speaker="agent", content=response["result"]
             )

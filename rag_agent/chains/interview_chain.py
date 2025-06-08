@@ -337,13 +337,13 @@ def get_model_answer_chain():
     return model_answer_chain
 
 
+class AssessmentResult(BaseModel):
+    logicScore: int
+    jobFitScore: int
+    coreValueFitScore: int
+    communicationScore: int
+    averageScore: float
 def get_assessment_chain():
-    class AssessmentResult(BaseModel):
-        logicScore: int
-        jobFitScore: int
-        coreValueFitScore: int
-        communicationScore: int
-        averageScore: float
 
     parser = JsonOutputParser(pydantic_object=AssessmentResult)
 

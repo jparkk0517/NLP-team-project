@@ -1,6 +1,6 @@
+from uuid import uuid4
 from langchain_core.output_parsers import (
     StrOutputParser,
-    JsonOutputParser,
 )
 from typing import Literal, Optional
 
@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 from langchain.prompts import PromptTemplate
 import os
 
-from ..chat_history import ChatHistory
 
 # .env 파일 로드
 load_dotenv()
@@ -26,9 +25,9 @@ class Persona(BaseModel):
     면접 에이전트의 Persona
     """
 
+    id: str
     type: PersonaType
     name: str
-    chat_history: ChatHistory
     interests: Optional[list[str]] = None
     communication_style: Optional[str] = None
     persona_template: PromptTemplate = None
@@ -37,13 +36,12 @@ class Persona(BaseModel):
         self,
         type: PersonaType,
         name: str,
-        chat_history: ChatHistory,
         interests: Optional[list[str]] = None,
         communication_style: Optional[str] = None,
     ):
+        self.id = str(uuid4().hex[:8])
         self.type = type
         self.name = name
-        self.chat_history = chat_history
         self.interests = interests
         self.communication_style = communication_style
         self.pesrona_prompt = PromptTemplate(
@@ -57,7 +55,16 @@ class Persona(BaseModel):
         )
 
     def get_base_prompt(self):
-        return self.pesrona_prompt | self.chat_history.get_chat_history_context_prompt()
+        return self.pesrona_prompt
+
+    def get_persona_info(self):
+        return {
+            "id": self.id,
+            "type": self.type,
+            "name": self.name,
+            "interests": self.interests,
+            "communication_style": self.communication_style,
+        }
 
     def generate_question(self):
         question_prompt = PromptTemplate(
