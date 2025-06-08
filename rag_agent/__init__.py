@@ -14,6 +14,7 @@ from .chains.interview_chain import (
     get_reranking_model_answer_chain,
     compare_model_answers,
     agent_executor,
+    classify_input,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "get_reranking_model_answer_chain",
     "compare_model_answers",
     "agent_executor",
+    "classify_input",
 ]

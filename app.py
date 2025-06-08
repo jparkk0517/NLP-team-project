@@ -152,7 +152,6 @@ async def load_local_data():
         "company_infos": stored_company_info,
     }
     logger.info("Precomputed company_info and initialized chains.")
-    
 
 
 def get_company_info():
@@ -182,12 +181,10 @@ async def get_chat_history():
                 )
             logger.info("No chat history found. Generating initial message...")
             response = init_message_chain.invoke({})
-            print(response)
+            # print(response)
             logger.info("Chain invocation completed")
-            
-            chat_history.add(
-                type="question", speaker="agent", content=response["result"]
-            )
+
+            chat_history.add(type="question", speaker="agent", content=response)
             return chat_history.get_all_history()
         except Exception as e:
             logger.error(f"Error in question generation: {str(e)}")
@@ -329,18 +326,15 @@ async def generate_model_answer(questionId: str):
         question_item = chat_history.get_question_by_id(questionId)
         if not question_item:
             raise HTTPException(status_code=404, detail="Question not found.")
-        
+
         response = model_answer_chain.invoke(
-            {
-                **base_chain_inputs,
-                "question": question_item.content
-            }
+            {**base_chain_inputs, "question": question_item.content}
         )
         answer_id = chat_history.add(
             type="modelAnswer",
             speaker="agent",
             content=response["result"],
-            related_chatting_id=questionId  # 질문 ID를 related_chatting_id로 설정
+            related_chatting_id=questionId,  # 질문 ID를 related_chatting_id로 설정
         )
         return {"id": answer_id, "content": response["result"]}
     except Exception as e:
@@ -354,16 +348,23 @@ async def analyze_input(text: str):
         resume = base_chain_inputs["resume"]
         jd = base_chain_inputs["jd"]
         company = base_chain_inputs["company_infos"]
+        last_question = chat_history.get_question_by_id(
+            chat_history.get_latest_question_id()
+        )
+        recent_history = chat_history.get_all_history_as_string()
 
         input_text = f"""
-        먼저 이 입력이 어떤 유형인지 판단합니다.
-        입력: '{resume}'
-
-        Action: classify_input
-        Action Input: '{resume}'
-        Observation: 입력 유형에 따라 분기 처리합니다.
+        다음 입력을 분석해서 먼저 어떤 유형인지 분류하세요.
+        그 후 적절한 tool을 사용해 응답을 생성하세요.
         
-        - 입력이 자소서(resume)인 경우:
+        입력: '{text}'
+
+        가능한 처리 흐름:
+        1. Action: classify_input
+            Action Input: '{text}'
+            Observation: 입력 유형을 분류함
+        
+        2. 분류된 유형이 'resume'이면:
             Action: generate_question_reasoning
             Action Input: {json.dumps({
                 "resume": resume,
@@ -374,25 +375,33 @@ async def analyze_input(text: str):
             Action: generate_question_acting
             Action Input: '{{reasoning}}'
 
-        - 입력이 면접답변(interview_answer)인 경우:
+        3. 분류된 유형이 'interview_answer'이면:
             Action: evaluate_answer
             Action Input: {json.dumps({
+                "answer": text,
+                "question": last_question,
                 "resume": resume,
                 "jd": jd,
                 "company": company
             })}
+            Observation: 평가 결과
             
-            Action: generate_acting
-            Action Input: '{{reasoning}}'
+            Thought: 만약 평가 결과 평균 점수가 5점 이하 또는 답변이 구체적이지 않거나 추가 질문이 필요하다면, 다음과 같이 진행하세요.
+                - Action: generate_followup_reasoning
+                    Action Input: {{ "input_text": "{text}", "chat_history": "{recent_history}" }}
+                - Action: generate_followup_acting
+                    Action Input: {{ "input_text": reasoning, "chat_history": "{recent_history}" }}
+            Thought: 충분한 답변이라면 꼬리질문은 생략하세요.
 
-        - 입력이 일반 텍스트(other)인 경우:
+        4. 분류된 유형이 'other'이면:
             Action: translate_to_korean
             Action Input: '{resume}'
             
             Action: generate_acting
             Action Input: '{{reasoning}}'
 
-        Thought: 최종 결과 도출 완료
+        Thought: 입력을 기반으로 어떤 유형인지 분류했습니다.
+            다음으로 적절한 tool을 사용해 응답을 생성하겠습니다.
         Final Answer:
         """
         response = agent_executor.invoke({"input": input_text})
@@ -413,25 +422,37 @@ async def generate_reranked_model_answer(questionId: str):
         question_item = chat_history.get_question_by_id(questionId)
         if not question_item:
             raise HTTPException(status_code=404, detail="Question not found.")
-        
+
         # 이전 질문/답변 쌍들 가져오기
         prev_pairs = []
         for item in chat_history.history:
             if item.type == "question" and item.related_chatting_id:
-                answer = next((a for a in chat_history.history if a.id == item.related_chatting_id), None)
+                answer = next(
+                    (
+                        a
+                        for a in chat_history.history
+                        if a.id == item.related_chatting_id
+                    ),
+                    None,
+                )
                 if answer:
-                    prev_pairs.append({
-                        "question": item.content,
-                        "answer": answer.content
-                    })
+                    prev_pairs.append(
+                        {"question": item.content, "answer": answer.content}
+                    )
 
         # 원본 모델 답변 가져오기
         original_answer = next(
-            (item for item in chat_history.history if item.type == "modelAnswer" and item.related_chatting_id == questionId),
-            None
+            (
+                item
+                for item in chat_history.history
+                if item.type == "modelAnswer" and item.related_chatting_id == questionId
+            ),
+            None,
         )
         if not original_answer:
-            raise HTTPException(status_code=404, detail="Original model answer not found.")
+            raise HTTPException(
+                status_code=404, detail="Original model answer not found."
+            )
 
         # reranking 답변 3개 생성
         reranked_responses = []
@@ -440,7 +461,7 @@ async def generate_reranked_model_answer(questionId: str):
                 {
                     **base_chain_inputs,
                     "question": question_item.content,
-                    "prev_question_answer_pairs": prev_pairs
+                    "prev_question_answer_pairs": prev_pairs,
                 }
             )
             reranked_responses.append(response["result"])
@@ -459,7 +480,7 @@ async def generate_reranked_model_answer(questionId: str):
             type="rerankedModelAnswer",
             speaker="agent",
             content=best_answer,
-            related_chatting_id=questionId
+            related_chatting_id=questionId,
         )
         return {"id": answer_id, "content": best_answer}
     except Exception as e:
@@ -472,8 +493,10 @@ async def compare_answers(questionId: str):
     try:
         # 디버깅을 위한 로깅 추가
         logger.info(f"Searching for answers related to questionId: {questionId}")
-        logger.info(f"Current chat history: {[{'type': item.type, 'id': item.id, 'related_id': item.related_chatting_id} for item in chat_history.history]}")
-        
+        logger.info(
+            f"Current chat history: {[{'type': item.type, 'id': item.id, 'related_id': item.related_chatting_id} for item in chat_history.history]}"
+        )
+
         # 원본 모델 답변 가져오기
         original_answer = None
         for item in chat_history.history:
@@ -481,28 +504,40 @@ async def compare_answers(questionId: str):
                 original_answer = item
                 logger.info(f"Found original answer with id: {item.id}")
                 break
-        
+
         if not original_answer:
-            logger.error(f"Original model answer not found for questionId: {questionId}")
-            raise HTTPException(status_code=404, detail="Original model answer not found. Please generate a model answer first using /modelAnswer endpoint.")
+            logger.error(
+                f"Original model answer not found for questionId: {questionId}"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail="Original model answer not found. Please generate a model answer first using /modelAnswer endpoint.",
+            )
 
         # Reranking된 모델 답변 가져오기
         reranked_answer = None
         for item in chat_history.history:
-            if item.type == "rerankedModelAnswer" and item.related_chatting_id == questionId:
+            if (
+                item.type == "rerankedModelAnswer"
+                and item.related_chatting_id == questionId
+            ):
                 reranked_answer = item
                 logger.info(f"Found reranked answer with id: {item.id}")
                 break
 
         if not reranked_answer:
-            logger.error(f"Reranked model answer not found for questionId: {questionId}")
-            raise HTTPException(status_code=404, detail="Reranked model answer not found. Please generate a reranked answer first using /rerankedModelAnswer endpoint.")
+            logger.error(
+                f"Reranked model answer not found for questionId: {questionId}"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail="Reranked model answer not found. Please generate a reranked answer first using /rerankedModelAnswer endpoint.",
+            )
 
         # 답변 비교
         logger.info("Comparing answers...")
         comparison_result = compare_model_answers(
-            original_answer.content,
-            reranked_answer.content
+            original_answer.content, reranked_answer.content
         )
         logger.info("Comparison completed successfully")
 
