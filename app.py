@@ -17,11 +17,11 @@ import shutil
 
 from rag_agent import (
     ChatHistory,
-    get_assessment_chain,
     get_evaluate_chain,
     get_followup_chain,
     get_interview_chain,
     get_model_answer_chain,
+    get_initial_message_chain,
     agent_executor,
 )
 
@@ -38,6 +38,7 @@ stored_resume: Optional[str] = None
 stored_jd: Optional[str] = None
 # 사전 계산된 회사 정보 및 체인 저장 변수
 stored_company_info: Optional[str] = None
+init_message_chain = None
 interview_chain = None
 followup_chain = None
 evaluate_chain = None
@@ -104,7 +105,7 @@ async def init_local_data():
 @app.on_event("startup")
 async def load_local_data():
     await init_local_data()
-    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain, assessment_chain
+    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain, assessment_chain, init_message_chain
     base_dir = os.path.join(os.path.dirname(__file__), "data")
     # 이력서 로딩
     resume_dir = os.path.join(base_dir, "resume")
@@ -136,11 +137,11 @@ async def load_local_data():
     logger.info("Loaded local resume, JD, and company infos.")
     # 사전 계산: 회사 정보와 체인 초기화
     stored_company_info = get_company_info()
+    init_message_chain = get_initial_message_chain()
     interview_chain = get_interview_chain()
     followup_chain = get_followup_chain()
     evaluate_chain = get_evaluate_chain()
     model_answer_chain = get_model_answer_chain()
-    assessment_chain = get_assessment_chain()
     base_chain_inputs = {
         "resume": stored_resume,
         "jd": stored_jd,
@@ -168,6 +169,23 @@ def get_company_info():
 
 @app.get("/chatHistory")
 async def get_chat_history():
+    if not chat_history.history:
+        try:
+            if init_message_chain is None:
+                raise HTTPException(
+                    status_code=500, detail="Initial message chain not initialized."
+                )
+            logger.info("No chat history found. Generating initial message...")
+            response = init_message_chain.invoke({})
+            # print(response)
+            logger.info("Chain invocation completed")
+            
+            chat_history.add(
+                type="question", speaker="agent", content=response
+            )
+            return chat_history.get_all_history()
+        except Exception as e:
+            logger.error(f"Error in question generation: {str(e)}")
     return chat_history.get_all_history()
 
 
@@ -335,28 +353,58 @@ async def analyze_input(text: str):
         resume = base_chain_inputs["resume"]
         jd = base_chain_inputs["jd"]
         company = base_chain_inputs["company_infos"]
+        last_question = chat_history.get_question_by_id(chat_history.get_latest_question_id())
+        recent_history = chat_history.get_all_history_as_string()
 
         input_text = f"""
-        먼저 이 입력이 어떤 유형인지 판단합니다.
-        입력: '{resume}'
+        다음 입력을 분석해서 먼저 어떤 유형인지 분류하세요.
+        그 후 적절한 tool을 사용해 응답을 생성하세요.
+        
+        입력: '{text}'
 
-        Action: classify_input
-        Action Input: '{resume}'
-        Observation: 입력이 자소서(resume)로 분류됨
+        가능한 처리 흐름:
+        1. Action: classify_input
+            Action Input: '{text}'
+            Observation: 입력 유형을 분류함
+        
+        2. 분류된 유형이 'resume'이면:
+            Action: generate_question_reasoning
+            Action Input: {json.dumps({
+                "resume": resume,
+                "jd": jd,
+                "company": company
+            })}
 
-        자소서인 경우에만 reasoning과 acting을 수행합니다.
+            Action: generate_question_acting
+            Action Input: '{{reasoning}}'
 
-        Action: generate_reasoning
-        Action Input: {json.dumps({
-            "resume": resume,
-            "jd": jd,
-            "company": company
-        })}
+        3. 분류된 유형이 'interview_answer'이면:
+            Action: evaluate_answer
+            Action Input: {json.dumps({
+                "answer": text,
+                "question": last_question,
+                "resume": resume,
+                "jd": jd,
+                "company": company
+            })}
+            Observation: 평가 결과
+            
+            Thought: 만약 평가 결과 평균 점수가 5점 이하 또는 답변이 구체적이지 않거나 추가 질문이 필요하다면, 다음과 같이 진행하세요.
+                - Action: generate_followup_reasoning
+                    Action Input: {{ "input_text": "{text}", "chat_history": "{recent_history}" }}
+                - Action: generate_followup_acting
+                    Action Input: {{ "input_text": reasoning, "chat_history": "{recent_history}" }}
+            Thought: 충분한 답변이라면 꼬리질문은 생략하세요.
 
-        Action: generate_acting
-        Action Input: '{{reasoning}}'
+        4. 분류된 유형이 'other'이면:
+            Action: translate_to_korean
+            Action Input: '{resume}'
+            
+            Action: generate_acting
+            Action Input: '{{reasoning}}'
 
-        Thought: 최종 질문 도출 완료
+        Thought: 입력을 기반으로 어떤 유형인지 분류했습니다.
+            다음으로 적절한 tool을 사용해 응답을 생성하겠습니다.
         Final Answer:
         """
         response = agent_executor.invoke({"input": input_text})
