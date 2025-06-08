@@ -1,15 +1,22 @@
-import { CiCirclePlus } from 'react-icons/ci';
-
-import { Avatar, Button, Form, Input, List, Modal, Select } from 'antd';
-import { useState } from 'react';
-import type { PersonaDTO, PersonaType } from '../../shared/type';
-import useChatStore from '../../shared/chatStore';
+import { Form, Input, Select, Button } from 'antd';
+import type {
+  PersonaDTO,
+  PersonaInputDTO,
+  PersonaType,
+} from '../../../shared/type';
 
 type PersonaForm = Omit<PersonaDTO, 'id'>;
-const NewPersonaForm = () => {
+
+interface NewPersonaFormProps {
+  addPersona: (persona: PersonaInputDTO) => Promise<PersonaDTO[]>;
+  deletePersona: (personaId: string) => Promise<PersonaDTO[]>;
+}
+
+const NewPersonaForm = ({ addPersona }: NewPersonaFormProps) => {
   const [form] = Form.useForm<PersonaForm>();
   const handleSubmit = (values: PersonaForm) => {
     console.log(values);
+    addPersona(values);
   };
 
   return (
@@ -79,45 +86,4 @@ const NewPersonaForm = () => {
   );
 };
 
-const PersonaList = () => {
-  const personaList = useChatStore((state) => state.personaList);
-  const [newPersonaOpen, setNewPersonaOpen] = useState(false);
-
-  return (
-    <div className='h-full'>
-      <List className='' itemLayout='horizontal'>
-        {personaList.map((persona, index) => (
-          <List.Item>
-            <List.Item.Meta
-              avatar={
-                <Avatar
-                  src={`https://api.dicebear.com/7.x/miniavs/svg?seed=${index}`}
-                  style={{ backgroundColor: 'red' }}
-                />
-              }
-              title={persona.name}
-            />
-          </List.Item>
-        ))}
-
-        <List.Item
-          className='cursor-pointer'
-          onClick={() => setNewPersonaOpen(true)}>
-          <List.Item.Meta
-            avatar={<CiCirclePlus size={24} />}
-            title={'면접관 추가하기'}
-          />
-        </List.Item>
-      </List>
-      <Modal
-        open={newPersonaOpen}
-        onCancel={() => setNewPersonaOpen(false)}
-        footer={null}
-        destroyOnHidden>
-        <NewPersonaForm />
-      </Modal>
-    </div>
-  );
-};
-
-export default PersonaList;
+export default NewPersonaForm;

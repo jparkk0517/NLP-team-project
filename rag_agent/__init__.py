@@ -15,7 +15,8 @@ from .chains.interview_chain import (
     agent_executor,
     classify_input,
 )
-from .persona.Persona import Persona
+from .persona.Persona import Persona, PersonaType
+from .persona.PersonaService import PersonaService, PersonaInput
 
 __all__ = [
     "ChatHistory",
@@ -32,4 +33,8 @@ __all__ = [
     "compare_model_answers",
     "agent_executor",
     "classify_input",
+    "PersonaService",
+    "Persona",
+    "PersonaType",
+    "PersonaInput",
 ]

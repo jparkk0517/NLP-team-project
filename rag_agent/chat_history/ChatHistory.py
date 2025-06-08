@@ -5,7 +5,9 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 
-ContentType = Literal["question", "answer", "modelAnswer", "evaluate", "rerankedModelAnswer"]
+ContentType = Literal[
+    "question", "answer", "modelAnswer", "evaluate", "rerankedModelAnswer"
+]
 SpeakerType = Literal["agent", "user"]
 
 
@@ -98,11 +100,7 @@ class ChatHistory(BaseModel):
 
     def get_all_history_as_string(self) -> str:
         return "\n".join(
-            [
-                f"{item.speaker}: {item.content}"
-                for item in self.history
-                if item.type == "question" or item.type == "answer"
-            ]
+            [f"{item.speaker}({item.id}): {item.content}" for item in self.history]
         )
 
     def get_chat_history_context_prompt(self) -> PromptTemplate:

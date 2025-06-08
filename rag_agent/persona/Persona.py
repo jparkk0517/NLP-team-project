@@ -30,7 +30,6 @@ class Persona(BaseModel):
     name: str
     interests: Optional[list[str]] = None
     communication_style: Optional[str] = None
-    persona_template: PromptTemplate = None
 
     def __init__(
         self,

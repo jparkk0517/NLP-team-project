@@ -1,5 +1,7 @@
 from typing import List, Optional, Self
 
+from pydantic import BaseModel
+
 from rag_agent.chat_history.ChatHistory import ChatHistory
 
 # rag_agent.chat_history.ChatHistory는 이 예제에서 직접 사용되지 않지만, 필요시 통합 가능
@@ -10,12 +12,6 @@ from langchain.prompts import PromptTemplate
 import os
 from langchain.agents import AgentExecutor, create_react_agent
 
-# tools.py 같은 별도 파일로 분리했다면 from .tools import assign_interviewer_persona, generate_interview_question, generate_model_answer_and_evaluation
-from __main__ import (
-    assign_interviewer_persona,
-    generate_interview_question,
-    generate_model_answer_and_evaluation,
-)
 import json  # JSON 직렬화를 위해 필요
 
 # .env 파일 로드 (이미 위에서 로드됨)
@@ -60,6 +56,13 @@ AGENT_BASE_PROMPT = PromptTemplate.from_template(
 chat_history = ChatHistory.get_instance()
 
 
+class PersonaInput(BaseModel):
+    type: PersonaType
+    name: str
+    interests: Optional[list[str]] = None
+    communication_style: Optional[str] = None
+
+
 class PersonaService:
     _instance: Self | None = None
 
@@ -80,9 +83,6 @@ class PersonaService:
         # 1. Agent가 사용할 도구들을 정의합니다.
         # 이 도구들은 위에서 정의한 `@tool` 함수들입니다.
         self.tools = [
-            assign_interviewer_persona,
-            generate_interview_question,
-            generate_model_answer_and_evaluation,
             # 필요시 다른 도구 추가
         ]
 
@@ -109,7 +109,7 @@ class PersonaService:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def add_persona(self, persona: Persona):
+    def add_persona(self, persona: PersonaInput):
         self.persona_list.append(persona)
 
     def get_persona_list(self) -> List[Persona]:
@@ -123,6 +123,9 @@ class PersonaService:
             if persona.id == persona_id:
                 return persona
         return None
+
+    def get_all_persona_info(self) -> str:
+        return json.dumps([p.to_dict() for p in self.persona_list], ensure_ascii=False)
 
     async def invoke_agent(
         self,

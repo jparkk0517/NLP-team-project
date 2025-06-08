@@ -1,12 +1,12 @@
 import ChatBody from '../feature/chat/ui/ChatBody';
 import ChatHeader from '../feature/chat/ui/ChatHeader';
 import ChatInput from '../feature/chat/ui/ChatInput';
-import PersonaList from '../feature/persona/PersonaList';
+import PersonaList from '../feature/persona/ui/PersonaList';
 import Panel from '../shared/Panel';
 
 const ChatPage = () => {
   return (
-    <div className='flex justify-between h-[98%] w-[99%]'> 
+    <div className='flex justify-between h-[98%] w-[99%]'>
       <Panel
         title='Agent list'
         minimizeDirection='horizontal'

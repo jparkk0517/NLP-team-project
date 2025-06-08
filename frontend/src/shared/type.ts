@@ -40,3 +40,28 @@ export interface PersonaDTO {
   interests?: string[];
   communicationStyle?: string;
 }
+export type RequestType =
+  | 'question'
+  | 'followup'
+  | 'modelAnswer'
+  | 'answer'
+  | 'other';
+export interface RequestInputDTO {
+  type?: RequestType;
+  content: string;
+  related_chatting_id?: string;
+}
+export interface PersonaInputDTO {
+  type: PersonaType;
+  name: string;
+  interests?: string[];
+  communication_style?: string;
+}
+
+export interface PersonaDTO {
+  id: string;
+  type: PersonaType;
+  name: string;
+  interests?: string[];
+  communication_style?: string;
+}
