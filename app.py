@@ -426,12 +426,18 @@ async def get_persona_list():
 
 @app.post("/persona")
 async def add_persona(persona: PersonaInput):
-    persona_service.add_persona(persona)
-    return None
+    try:
+        new_persona = persona_service.add_persona(persona)
+        return new_persona.get_persona_info()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/persona/{persona_id}")
 async def delete_persona(persona_id: str):
+    persona = persona_service.get_persona_by_id(persona_id)
+    if not persona:
+        raise HTTPException(status_code=404, detail="Persona not found.")
     persona_service.delete_persona(persona_id)
     return None
 

@@ -41,7 +41,7 @@ const useChatHistory = () => {
 };
 
 const useRequest = () => {
-  const { mutateAsync } = useMutation({
+  const { mutateAsync, isPending } = useMutation({
     mutationFn: async (data: RequestInputDTO) => {
       return await Api.POST<RequestInputDTO, ChatHistoryDTO[]>('/', data);
     },
@@ -52,7 +52,7 @@ const useRequest = () => {
       try {
         await mutateAsync({
           type: 'followup',
-          content: '',
+          content: '꼬리질문 해줘',
           related_chatting_id: questionId,
         });
       } catch (e) {
@@ -67,7 +67,7 @@ const useRequest = () => {
       try {
         await mutateAsync({
           type: 'modelAnswer',
-          content: '',
+          content: '모범답변 해줘',
           related_chatting_id: questionId,
         });
       } catch (e) {
@@ -81,7 +81,7 @@ const useRequest = () => {
     try {
       await mutateAsync({
         type: 'question',
-        content: '',
+        content: '다음질문 해줘',
       });
     } catch (e) {
       console.error(e);
@@ -102,6 +102,15 @@ const useRequest = () => {
     },
     [mutateAsync]
   );
+
+  const { setIsPending } = useChatStore(
+    useShallow((state) => ({
+      setIsPending: state.setIsPending,
+    }))
+  );
+  useEffect(() => {
+    setIsPending(isPending);
+  }, [isPending, setIsPending]);
 
   return {
     followUpQuestion,

@@ -59,7 +59,7 @@ class Persona:
     def get_base_prompt(self):
         return self.pesrona_prompt
 
-    def get_persona_info(self):
+    def get_persona_info(self) -> dict:
         return {
             "id": self.id,
             "type": self.type,

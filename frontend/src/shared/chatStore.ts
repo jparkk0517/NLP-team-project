@@ -1,20 +1,20 @@
 import { create } from 'zustand';
-import type { ChatHistoryDTO, PersonaDTO } from './type';
+import type { ChatHistoryDTO } from './type';
 
 const useChatStore = create<{
   lastMessage?: ChatHistoryDTO;
   lastQuestionId?: string;
-  personaList: PersonaDTO[];
+  isPending: boolean;
   setLastMessage: (lastMessage?: ChatHistoryDTO) => void;
   setLastQuestionId: (lastQuestionId?: string) => void;
-  setPersonaList: (personaList: PersonaDTO[]) => void;
+  setIsPending: (isPending: boolean) => void;
 }>((set) => ({
   lastMessage: undefined,
   lastQuestionId: undefined,
-  personaList: [],
+  isPending: true,
   setLastMessage: (lastMessage) => set({ lastMessage }),
   setLastQuestionId: (lastQuestionId) => set({ lastQuestionId }),
-  setPersonaList: (personaList) => set({ personaList }),
+  setIsPending: (isPending) => set({ isPending }),
 }));
 
 export default useChatStore;

@@ -1,6 +1,7 @@
 import { LuPanelRight, LuPanelBottom } from 'react-icons/lu';
 
 import React, { useMemo, useState, type ReactNode } from 'react';
+import LoadingSpinner from './LoadingSpinner';
 
 interface PanelProps {
   title: string;
@@ -8,6 +9,7 @@ interface PanelProps {
   className?: string;
   minimizedClassName?: string;
   minimizeDirection?: 'vertical' | 'horizontal';
+  isPending?: boolean;
 }
 
 const Panel: React.FC<PanelProps> = ({
@@ -16,6 +18,7 @@ const Panel: React.FC<PanelProps> = ({
   className,
   minimizedClassName,
   minimizeDirection = 'vertical',
+  isPending = false,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
 
@@ -24,12 +27,7 @@ const Panel: React.FC<PanelProps> = ({
   };
 
   const classNames = useMemo(() => {
-    const classNameList = [
-      'rounded-lg',
-      'm-2',
-      'border-1',
-      'border-gray-600',
-    ];
+    const classNameList = ['rounded-lg', 'm-2', 'border-1', 'border-gray-600'];
     if (isMinimized) {
       classNameList.push(minimizedClassName);
       if (minimizeDirection === 'horizontal') {
@@ -68,8 +66,22 @@ const Panel: React.FC<PanelProps> = ({
       </div>
 
       {/* Body */}
-      {!isMinimized && <div className='p-4 h-[95%] 
-      overflow-auto'>{children}</div>}
+      {!isMinimized && (
+        <div
+          className='p-4 h-[95%] 
+      overflow-auto relative'>
+          {
+            <>
+              {isPending && (
+                <div className='flex justify-center items-center h-full opacity-50 absolute top-0 left-0 w-full z-10 bg-black/50'>
+                  <LoadingSpinner />
+                </div>
+              )}
+              {children}
+            </>
+          }
+        </div>
+      )}
     </div>
   );
 };

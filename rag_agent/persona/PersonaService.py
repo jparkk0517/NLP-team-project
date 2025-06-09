@@ -94,14 +94,14 @@ class PersonaService(Singleton):
         self.persona_list: List[Persona] = []
 
     def add_persona(self, persona: PersonaInput):
-        self.persona_list.append(
-            Persona(
-                type=persona.type,
-                name=persona.name,
-                interests=persona.interests,
-                communication_style=persona.communication_style,
-            )
+        new_persona = Persona(
+            type=persona.type,
+            name=persona.name,
+            interests=persona.interests,
+            communication_style=persona.communication_style,
         )
+        self.persona_list.append(new_persona)
+        return new_persona
 
     def get_persona_list(self) -> List[Persona]:
         return self.persona_list
