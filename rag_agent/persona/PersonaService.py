@@ -10,6 +10,7 @@ from .Persona import Persona, PersonaType, llm  # Persona 클래스와 LLM 임�
 from dotenv import load_dotenv
 from langchain.prompts import PromptTemplate
 from langchain.agents import AgentExecutor, create_react_agent
+from langchain_core.runnables import RunnableLambda
 
 import json  # JSON 직렬화를 위해 필요
 
@@ -59,7 +60,7 @@ class PersonaInput(BaseModel):
     type: PersonaType
     name: str
     interests: Optional[list[str]] = None
-    communication_style: Optional[str] = None
+    communicationStyle: Optional[str] = None
 
 
 # --- Agent 구축 ---
@@ -98,7 +99,7 @@ class PersonaService(Singleton):
             type=persona.type,
             name=persona.name,
             interests=persona.interests,
-            communication_style=persona.communication_style,
+            communication_style=persona.communicationStyle,
         )
         self.persona_list.append(new_persona)
         return new_persona
@@ -114,16 +115,21 @@ class PersonaService(Singleton):
             if persona.id == persona_id:
                 return persona
         return None
+    
+    def get_persona_str_by_id(self, persona_id: str) -> Optional[str]:
+        for persona in self.persona_list:
+            if persona.id == persona_id:
+                return json.dumps(persona.get_persona_info(), ensure_ascii=False)
+        return None
 
     def get_all_persona_info(self) -> str:
         return [p.get_persona_info() if p else None for p in self.persona_list]
 
-    async def invoke_agent(
+    def invoke_agent(
         self,
-        user_query: str,
-        resume_summary: str,
-        jd_summary: str,
-        company_infos_summary: Optional[str] = None,
+        resume: str,
+        jd: str,
+        company_infos: Optional[str] = None,
         applicant_answer: Optional[str] = None,
         interviewer_question: Optional[str] = None,  # 지원자가 받은 질문
     ) -> str:
@@ -132,20 +138,19 @@ class PersonaService(Singleton):
         다양한 면접 관련 맥락 정보를 Agent에 전달합니다.
         """
         # 현재 등록된 페르소나 리스트를 JSON 문자열로 변환하여 도구에 전달할 준비
-        available_personas_for_tool = json.dumps(
-            [p.to_dict() for p in self.persona_list], ensure_ascii=False
+        available_personas_json = json.dumps(
+            [p.get_persona_info() for p in self.persona_list], ensure_ascii=False
         )
 
         # Agent의 'input'에 전달할 맥락 정보 딕셔너리 구성
         # 이 정보들은 Agent의 Thought 과정에서 도구 인자로 활용될 수 있도록 LLM이 참조합니다.
         context_for_agent_input = {
-            "user_query": user_query,
-            "resume_summary": resume_summary,
-            "jd_summary": jd_summary,
-            "company_infos_summary": company_infos_summary,
+            "resume": resume,
+            "jd": jd,
+            "company_infos": company_infos,
             "applicant_answer": applicant_answer,
             "interviewer_question": interviewer_question,  # 지원자가 받은 질문
-            "available_personas_json": available_personas_for_tool,  # 페르소나 할당 도구가 이 정보를 참조할 수 있도록
+            "available_personas_json": available_personas_json,  # 페르소나 할당 도구가 이 정보를 참조할 수 있도록
         }
 
         # Agent Executor를 호출합니다.
@@ -156,16 +161,49 @@ class PersonaService(Singleton):
             # Agent의 프롬프트와 도구 설명이 이 정보를 바탕으로 적절한 도구를 선택하도록 안내해야 합니다.
             # 예를 들어, user_query에 "페르소나 할당"과 같은 키워드가 있거나,
             # applicant_answer가 제공되면 "평가/모범 답변 생성" 도구를 사용하도록 유도합니다.
-            full_input_to_agent = {
-                "input": user_query,  # 주 사용자 쿼리
-                "context_json": json.dumps(
-                    context_for_agent_input, ensure_ascii=False
-                ),  # Agent가 참조할 전체 맥락
-            }
+            persona_query = f"""
+            You are an AI agent responsible for selecting the most appropriate persona for a job applicant based on the provided context.
 
-            # AgentExecutor.ainvoke를 호출합니다.
-            result = await agent_executor.ainvoke(full_input_to_agent)
+            Instructions:
+            - Analyze the applicant's resume, job description (JD) and applicant's interview answer.
+            - Evaluate all available personas.
+            - Select the single most appropriate persona based on similarity of interests, communication style, and role type.
+            - From the provided persona list, choose the single most appropriate **persona ID**.
+            - Do not explain your reasoning unless asked.
+            - Return ONLY the selected persona's ID in the format: Action Input: <persona_id>
+            
+            ---
+            resume:
+            {resume}
+            
+            job description:
+            {jd}
+            
+            applicant's interview response or input:
+            {applicant_answer}
+            
+            available_personas_json: 
+            {available_personas_json}
+                        
+            ---
+            You must follow the format below exactly:
 
+            Thought: your internal reasoning 
+            Final Answer: persona_id (or null if no persona is available)       
+
+            You must always end your response with a valid Final Answer.
+            Failure to do so will cause the system to fail.
+            Do not respond with "I don't know" or "I can't answer that". Always choose the best matching persona from the list.
+            
+            ---
+
+            Begin:
+
+            Question: What is the ID of the most appropriate persona for this applicant?
+            """
+        
+            result = agent_executor.invoke({"input": persona_query})
+            
             # AgentExecutor의 결과는 딕셔너리 형태로 반환되며, 최종 답변은 'output' 키에 있습니다.
             final_answer = result.get("output", "Agent가 답변을 생성하지 못했습니다.")
             return final_answer

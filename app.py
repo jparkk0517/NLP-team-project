@@ -139,6 +139,19 @@ async def load_local_data():
         "jd": stored_jd,
         "company_infos": stored_company_info,
     }
+    # 페르소나 추가 (테스트용)
+    persona_service.add_persona(PersonaInput(
+        name="Recruiter",
+        type="other",
+        interests=["조직 적응력", "인성"],
+        communicationStyle="차분하고 상냥한 스타일"
+    ))
+    persona_service.add_persona(PersonaInput(
+        name="CTO",
+        type="developer",
+        interests=["이슈 해결 과정과 Lessons Learned"],
+        communicationStyle="불필요한 말은 하지 않음, 합리적이고 이성적인 스타일"
+    ))
     logger.info("Precomputed company_info and initialized chains.")
 
 
@@ -169,10 +182,9 @@ async def get_chat_history():
                 )
             logger.info("No chat history found. Generating initial message...")
             response = init_message_chain.invoke({})
-            # print(response)
             logger.info("Chain invocation completed")
 
-            chat_history.add(type="question", speaker="agent", content=response)
+            chat_history.add(type="question", speaker="agent", content=response["result"])
             return chat_history.get_all_history()
         except Exception as e:
             logger.error(f"Error in question generation: {str(e)}")
@@ -343,6 +355,8 @@ async def analyze_input(request: RequestInput):
     type = request.type
     content = request.content
     related_chatting_id = request.related_chatting_id
+    chat_history.add(type=type, speaker="user", content=content)
+    
     try:
         resume = base_chain_inputs["resume"]
         jd = base_chain_inputs["jd"]
@@ -351,7 +365,17 @@ async def analyze_input(request: RequestInput):
             chat_history.get_latest_question_id()
         )
         recent_history = chat_history.get_all_history_as_string()
-
+        
+        persona_id = persona_service.invoke_agent(
+            resume=resume, 
+            jd=jd, 
+            applicant_answer=content
+        )
+        
+        persona_info = ""
+        if "null" not in persona_id:
+            persona_info = persona_service.get_persona_str_by_id(persona_id)
+        
         input_text = f"""
         다음 입력을 분석해서 먼저 어떤 유형인지 분류하세요.
         그 후 적절한 tool을 사용해 응답을 생성하세요.
@@ -362,36 +386,39 @@ async def analyze_input(request: RequestInput):
         1. Action: classify_input
             Action Input: {
                 json.dumps({
-                "request": {
-                    "type": type,
-                    "content": content,
-                    "related_chatting_id": related_chatting_id,
-                },
-                "chat_history": recent_history,
-                })
+                    "request": {
+                        "type": type,
+                        "content": content,
+                        "related_chatting_id": related_chatting_id,
+                    },
+                    "chat_history": recent_history,
+                }, ensure_ascii=False)
             }
             Observation: 입력 유형을 분류함
         
-        2. 분류된 유형이 'resume'이면:
+        2. 분류된 유형이 'question'이면:
             Action: generate_question_reasoning
             Action Input: {json.dumps({
                 "resume": resume,
                 "jd": jd,
-                "company": company
-            })}
+                "company": company,
+                "chat_history": recent_history,
+                "persona": persona_info 
+            }, ensure_ascii=False)}
 
             Action: generate_question_acting
             Action Input: '{{reasoning}}'
 
-        3. 분류된 유형이 'interview_answer'이면:
+        3. 분류된 유형이 'answer' 또는 'followup'이면:
             Action: evaluate_answer
             Action Input: {json.dumps({
                 "answer": content,
                 "question": last_question,
                 "resume": resume,
                 "jd": jd,
-                "company": company
-            },default=str)}
+                "company": company,
+                "persona": persona_info 
+            }, default=str, ensure_ascii=False)}
             Observation: 평가 결과
             
             Thought: 만약 평가 결과 평균 점수가 5점 이하 또는 답변이 구체적이지 않거나 추가 질문이 필요하다면, 다음과 같이 진행하세요.
