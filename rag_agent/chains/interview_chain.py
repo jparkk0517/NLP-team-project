@@ -17,7 +17,6 @@ import os
 import logging
 import json
 
-
 from dotenv import load_dotenv
 
 # .env 파일 로드
@@ -29,22 +28,31 @@ logger = logging.getLogger(__name__)
 
 @tool
 def classify_input(input):
-    """입력이 자소서인지, 면접답변인지, 일반 텍스트인지 구분합니다."""
+    """사용자 입력과, 이전 대화내용을 바탕으로 현재 입력이 어떤 형식인지 분류합니다."""
+    data = json.loads(input)
+    request = data["request"]
+    chat_history = data["chat_history"]
+
+    """입력이 사용자의 입력을 분류합니다."""
     classify_prompt = PromptTemplate.from_template(
         """
         다음 입력이 어떤 유형인지 판단하세요: 
-        - 자소서 (resume)
-        - 면접 질문에 대한 답변 (interview_answer)
+        - 자소서 입력 (resume)
+        - 질문 요청 (question)
+        - 꼬리질문 요청 (followup)
+        - 모범 답변 요청 (modelAnswer)
+        - 답변 요청 (answer)
         - 그 외 일반 텍스트 (other)
 
         입력:
-        {input}
+        사용자 입력 : {request}
+        이전 대화 내용 : {chat_history}
 
-        형식: resume, interview_answer, other 중 하나로만 답하세요.
+        형식: question, followup, modelAnswer, answer, other 중 하나로만 답하세요.
         """
     )
     chain = classify_prompt | llm | StrOutputParser()
-    return chain.invoke({"input": input})
+    return chain.invoke({"request": request, "chat_history": chat_history})
 
 
 @tool
@@ -55,12 +63,14 @@ def generate_question_reasoning(data):
     resume = data["resume"]
     jd = data["jd"]
     company = data["company"]
+    chat_history = data["chat_history"]
+    persona = data["persona"]
 
     reasoning_prompt = PromptTemplate.from_template(
         """
-        다음은 한 지원자의 자소서, JD(직무기술서), 회사 정보입니다:
+        다음은 지원자의 자소서, JD(직무기술서), 회사 정보, 이전 대화 이력, 그리고 면접관 페르소나입니다:
 
-        자소서:
+        자기소개서:
         {resume}
 
         JD:
@@ -69,19 +79,33 @@ def generate_question_reasoning(data):
         회사 정보:
         {company}
 
-        이 정보를 바탕으로, 아래 내용을 고려하여 면접 질문을 만들기 위한 Reasoning을 작성하세요:
-        1. 회사 인재상에 부합하는 성격/역량/행동을 자소서에서 얼마나 확인할 수 있는가?
-        2. JD에서 요구하는 자격요건, 기술, 경험과 자소서가 잘 부합하는가?
-        3. 부족하거나 확인이 필요한 점은 무엇인가?
+        면접관 페르소나 (성격, 관심사, 커뮤니케이션 스타일 등):
+        {persona}
 
-        [출력 예시]
-        - 협업 역량이 회사 인재상에서 중요하지만 자소서에 구체적인 협업 경험이 언급되어 있지 않음.
-        - JD에서 강조한 데이터 분석 경험이 자소서에 일부 존재하나 프로젝트 구체성 부족.
+        ---
+
+        당신은 위 페르소나를 기반으로 하는 면접관입니다.
+        즉, 질문을 만드는 과정에서 다음을 고려해야 합니다:
+
+        - 이 면접관은 어떤 관점에서 지원자를 바라볼까?
+        - 어떤 역량이나 키워드에 특히 민감하게 반응할까?
+        - 질문을 던질 때 어떤 스타일(논리적, 날카로운, 따뜻한 등)로 Reasoning을 전개할까?
+
+        아래 내용을 반드시 반영하여 Reasoning을 작성하세요:
+
+        1. 회사 인재상에 부합하는 성격/역량/행동을 자소서에서 얼마나 확인할 수 있는가?
+        2. JD에서 요구하는 자격요건, 기술, 경험과 자소서가 얼마나 부합하는가?
+        3. 부족하거나 확인이 필요한 부분은 무엇인가?
+        4. (중요) 이 내용을 면접관 페르소나의 시각과 말투, 성격을 반영하여 분석하세요.
+
+        출력 예시:
+        - (논리적 스타일) "JD에서 요구한 협업 경험이 자소서에 구체적으로 드러나지 않아, 실제로 팀 프로젝트를 주도한 경험이 있었는지 확인하고 싶다."
+        - (호기심 많은 스타일) "지원자는 데이터 분석 경험이 있다고 했지만 어떤 툴을 사용했는지 궁금하다. 프로젝트 맥락을 더 듣고 싶다."
         """
     )
 
     chain = reasoning_prompt | llm | StrOutputParser()
-    return chain.invoke({"resume": resume, "jd": jd, "company": company})
+    return chain.invoke({"resume": resume, "jd": jd, "company": company, "persona": persona})
 
 
 @tool
@@ -171,6 +195,7 @@ def evaluate_answer(data):
     company = data["company"]
     question = data["question"]
     answer = data["answer"]
+    persona = data["persona"]
 
     assessment_prompt = PromptTemplate(
         input_variables=["resume", "jd", "company", "chat_history"],
