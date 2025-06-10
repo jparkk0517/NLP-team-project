@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
 import uvicorn
 import logging
 from langchain_community.vectorstores import Chroma
@@ -12,7 +12,6 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader
 
 import json
 import os
-import io
 import shutil
 
 from rag_agent import (
@@ -25,7 +24,10 @@ from rag_agent import (
     get_reranking_model_answer_chain,
     compare_model_answers,
     agent_executor,
+    PersonaService,
 )
+from rag_agent.persona.Persona import Persona, PersonaType
+from rag_agent.persona.PersonaService import PersonaInput
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -55,22 +57,9 @@ persist_directory = os.getenv(
 )
 
 
-class AnswerRequest(BaseModel):
-    questionId: str
-    content: str
-
-
-class Question(BaseModel):
-    id: str
-    content: str
-
-
-class Answer(BaseModel):
-    id: str
-    content: str
-
-
-chat_history = ChatHistory()
+chat_history = ChatHistory.get_instance()
+persona_service = PersonaService.get_instance()
+print(ChatHistory.get_instance(), PersonaService.get_instance())
 
 
 # 로컬 파일 시스템에서 context와 회사 자료 자동 로딩
@@ -197,7 +186,6 @@ async def get_chat_history():
                 )
             logger.info("No chat history found. Generating initial message...")
             response = init_message_chain.invoke({})
-            # print(response)
             logger.info("Chain invocation completed")
 
             chat_history.add(
@@ -224,7 +212,6 @@ async def analyze_input(request: RequestInput):
     content = request.content
     related_chatting_id = request.related_chatting_id
     chat_history.add(type=type, speaker="user", content=content)
-
     try:
         resume = base_chain_inputs["resume"]
         jd = base_chain_inputs["jd"]
@@ -246,45 +233,57 @@ async def analyze_input(request: RequestInput):
         다음 입력을 분석해서 먼저 어떤 유형인지 분류하세요.
         그 후 적절한 tool을 사용해 응답을 생성하세요.
         
-        입력: '{text}'
+        입력: '{content}'
 
         가능한 처리 흐름:
         1. Action: classify_input
-            Action Input: '{text}'
+            Action Input: {
+                json.dumps({
+                    "request": {
+                        "type": type,
+                        "content": content,
+                        "related_chatting_id": related_chatting_id,
+                    },
+                    "chat_history": recent_history,
+                }, ensure_ascii=False)
+            }
             Observation: 입력 유형을 분류함
         
-        2. 분류된 유형이 'resume'이면:
+        2. 분류된 유형이 'question'이면:
             Action: generate_question_reasoning
             Action Input: {json.dumps({
                 "resume": resume,
                 "jd": jd,
-                "company": company
-            })}
+                "company": company,
+                "chat_history": recent_history,
+                "persona": persona_info 
+            }, ensure_ascii=False)}
 
             Action: generate_question_acting
             Action Input: '{{reasoning}}'
 
-        3. 분류된 유형이 'interview_answer'이면:
+        3. 분류된 유형이 'answer' 또는 'followup'이면:
             Action: evaluate_answer
             Action Input: {json.dumps({
-                "answer": text,
+                "answer": content,
                 "question": last_question,
                 "resume": resume,
                 "jd": jd,
-                "company": company
-            })}
+                "company": company,
+                "persona": persona_info 
+            }, default=str, ensure_ascii=False)}
             Observation: 평가 결과
             
             Thought: 만약 평가 결과 평균 점수가 5점 이하 또는 답변이 구체적이지 않거나 추가 질문이 필요하다면, 다음과 같이 진행하세요.
                 - Action: generate_followup_reasoning
-                    Action Input: {{ "input_text": "{text}", "chat_history": "{recent_history}" }}
+                    Action Input: {{ "input_text": "{content}", "chat_history": "{recent_history}" }}
                 - Action: generate_followup_acting
                     Action Input: {{ "input_text": reasoning, "chat_history": "{recent_history}" }}
             Thought: 충분한 답변이라면 꼬리질문은 생략하세요.
 
         4. 분류된 유형이 'other'이면:
             Action: translate_to_korean
-            Action Input: '{resume}'
+            Action Input: '{content}'
             
             Action: generate_acting
             Action Input: '{{reasoning}}'
@@ -305,6 +304,29 @@ async def analyze_input(request: RequestInput):
         return chat_history.get_all_history()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/persona/list")
+async def get_persona_list():
+    return persona_service.get_all_persona_info()
+
+
+@app.post("/persona")
+async def add_persona(persona: PersonaInput):
+    try:
+        new_persona = persona_service.add_persona(persona)
+        return new_persona.get_persona_info()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/persona/{persona_id}")
+async def delete_persona(persona_id: str):
+    persona = persona_service.get_persona_by_id(persona_id)
+    if not persona:
+        raise HTTPException(status_code=404, detail="Persona not found.")
+    persona_service.delete_persona(persona_id)
+    return None
 
 
 @app.get("/rerankedModelAnswer")

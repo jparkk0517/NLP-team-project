@@ -17,29 +17,17 @@ const ActionButtons = ({ disabled = false }: ActionButtonsProps) => {
   );
 
   const queryClient = useQueryClient();
-  const {
-    followUpQuestion,
-    bestAnswer,
-    nextQuestion,
-    isFollowUpQuestionPending,
-    isBestAnswerPending,
-    isNextQuestionPending,
-  } = useRequest();
+  const { followUpQuestion, bestAnswer, nextQuestion } = useRequest();
 
-  const isDisabled =
-    disabled ||
-    isFollowUpQuestionPending ||
-    isBestAnswerPending ||
-    isNextQuestionPending;
   const handleAction = async (
     type: 'followUpQuestion' | 'bestAnswer' | 'nextQuestion'
   ) => {
     try {
       if (!lastQuestionId) return;
       if (type === 'followUpQuestion') {
-        await followUpQuestion({ questionId: lastQuestionId });
+        await followUpQuestion(lastQuestionId);
       } else if (type === 'bestAnswer') {
-        await bestAnswer({ questionId: lastQuestionId });
+        await bestAnswer(lastQuestionId);
       } else if (type === 'nextQuestion') {
         await nextQuestion();
       }
@@ -53,24 +41,21 @@ const ActionButtons = ({ disabled = false }: ActionButtonsProps) => {
     <div className='flex flex-row p-2'>
       <Button
         disabled={
-          lastMessage?.type === 'question' || isDisabled || !lastQuestionId
+          lastMessage?.type === 'question' || disabled || !lastQuestionId
         }
         className='mr-2 '
-        isLoading={isFollowUpQuestionPending}
         onClick={() => handleAction('followUpQuestion')}>
         꼬리질문
       </Button>
       <Button
-        disabled={lastMessage?.type !== 'question' || isDisabled}
+        disabled={lastMessage?.type !== 'question' || disabled}
         className='mr-2 '
-        isLoading={isBestAnswerPending}
         onClick={() => handleAction('bestAnswer')}>
         모범답변
       </Button>
       <Button
-        disabled={isDisabled}
+        disabled={disabled}
         className='mr-2 '
-        isLoading={isNextQuestionPending}
         onClick={() => handleAction('nextQuestion')}>
         다음질문
       </Button>
