@@ -33,9 +33,12 @@ const ChatInput = () => {
         } catch (error) {
           console.error(error);
         }
-        setMessage('');
-      }, 100);
-      debounced();
+      } catch (error) {
+        console.error(error);
+      } finally {
+        queryClient.invalidateQueries({ queryKey: ['chatHistory'] });
+        form.resetFields();
+      }
     },
     [chat, inputable, lastMessage, message, queryClient]
   );

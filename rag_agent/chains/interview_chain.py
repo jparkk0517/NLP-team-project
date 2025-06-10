@@ -52,9 +52,11 @@ def generate_question_reasoning(data):
     """Resumes, Job Descriptions, and Company Info를 기반으로 질문 이유(Reasoning)를 도출"""
 
     data = json.loads(data)
-    resume = data["resume"]
-    jd = data["jd"]
-    company = data["company"]
+    resume = data.get("resume", "")
+    jd = data.get("jd", "")
+    company = data.get("company", "")
+    # chat_history = data["chat_history"]
+    persona = data.get("persona", "")
 
     reasoning_prompt = PromptTemplate.from_template(
         """
@@ -81,7 +83,9 @@ def generate_question_reasoning(data):
     )
 
     chain = reasoning_prompt | llm | StrOutputParser()
-    return chain.invoke({"resume": resume, "jd": jd, "company": company})
+    return chain.invoke(
+        {"resume": resume, "jd": jd, "company": company, "persona": persona}
+    )
 
 
 @tool
@@ -152,25 +156,26 @@ def generate_followup_acting(reasoning, input_text):
     return chain.invoke({"reasoning": reasoning, "input_text": input_text})
 
 
+class AssessmentResult(BaseModel):
+    logicScore: int
+    jobFitScore: int
+    coreValueFitScore: int
+    communicationScore: int
+    averageScore: float
 @tool
 def evaluate_answer(data):
     """지원자 답변을 평가"""
 
-    class AssessmentResult(BaseModel):
-        logicScore: int
-        jobFitScore: int
-        coreValueFitScore: int
-        communicationScore: int
-        averageScore: float
 
     parser = JsonOutputParser(pydantic_object=AssessmentResult)
 
     data = json.loads(data)
-    resume = data["resume"]
-    jd = data["jd"]
-    company = data["company"]
-    question = data["question"]
-    answer = data["answer"]
+    resume = data.get("resume", "")
+    jd = data.get("jd", "")
+    company = data.get("company", "")
+    question = data.get("question", "")
+    answer = data.get("answer", "")
+    persona = data.get("persona", "")
 
     assessment_prompt = PromptTemplate(
         input_variables=["resume", "jd", "company", "chat_history"],
@@ -197,6 +202,9 @@ def evaluate_answer(data):
             
             지원자의 답변:
             {answer}
+
+            면접관 정보:
+            {persona}
             
             위 질문/답변 내용들을 바탕으로 
             현재 지원자가 다음 항목들에 대하여 얼마나 잘 답변했는지 평가해야 한다.
@@ -225,6 +233,7 @@ def evaluate_answer(data):
             "company": company,
             "question": question,
             "answer": answer,
+            "persona": persona,
         }
     )
 

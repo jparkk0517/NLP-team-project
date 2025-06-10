@@ -1,4 +1,6 @@
-from typing import Literal, Optional
+import json
+from langchain.prompts import PromptTemplate
+from typing import Literal, Optional, Self
 from uuid import uuid4
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -15,6 +17,7 @@ class ChatItem(BaseModel):
     content: str
     related_chatting_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
+    persona: Optional[dict] = None
 
 
 class ChatHistory(BaseModel):
@@ -26,6 +29,7 @@ class ChatHistory(BaseModel):
         speaker: SpeakerType,
         content: str,
         related_chatting_id: Optional[str] = None,
+        persona_info: Optional[str] = None,
     ) -> str:
         id = str(uuid4().hex[:8])
         self.history.append(
@@ -35,6 +39,7 @@ class ChatHistory(BaseModel):
                 speaker=speaker,
                 content=content,
                 related_chatting_id=related_chatting_id,
+                persona=json.loads(persona_info) if persona_info else None,
             )
         )
         return id

@@ -1,4 +1,4 @@
-import type { ChatHistoryDTO } from '../../../shared/type';
+import type { ChatHistoryDTO, PersonaDTO } from '../../../shared/type';
 import { useRef } from 'react';
 import { useEffect } from 'react';
 
@@ -13,12 +13,12 @@ const UserIcon = () => {
   );
 };
 
-const AgentIcon = () => {
+const AgentIcon = ({ persona }: { persona?: PersonaDTO }) => {
   return (
     <div className=''>
       <span
         className={`text-black rounded-full p-2 w-[50px] h-[50px] flex items-center justify-center m-2 bg-yellow-300`}>
-        Agent
+        {persona?.name ?? 'Agent'}
       </span>
     </div>
   );
@@ -47,6 +47,7 @@ const Message = ({
   speaker,
   content,
   isLastMessage,
+  persona,
 }: ChatHistoryDTO & {
   isLastMessage: boolean;
 }) => {
@@ -66,7 +67,7 @@ const Message = ({
       {isAgent ? (
         <>
           <div className='flex p-2'>
-            <AgentIcon />
+            <AgentIcon persona={persona} />
             <Content content={content} />
           </div>
         </>

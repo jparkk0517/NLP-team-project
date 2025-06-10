@@ -150,6 +150,23 @@ async def load_local_data():
         "jd": stored_jd,
         "company_infos": stored_company_info,
     }
+    # 페르소나 추가 (테스트용)
+    persona_service.add_persona(
+        PersonaInput(
+            name="Recruiter",
+            type="other",
+            interests=["조직 적응력", "인성"],
+            communicationStyle="차분하고 상냥한 스타일",
+        )
+    )
+    persona_service.add_persona(
+        PersonaInput(
+            name="CTO",
+            type="developer",
+            interests=["이슈 해결 과정과 Lessons Learned"],
+            communicationStyle="불필요한 말은 하지 않음, 합리적이고 이성적인 스타일",
+        )
+    )
     logger.info("Precomputed company_info and initialized chains.")
 
 
@@ -183,166 +200,31 @@ async def get_chat_history():
             # print(response)
             logger.info("Chain invocation completed")
 
-            chat_history.add(type="question", speaker="agent", content=response)
+            chat_history.add(
+                type="question", speaker="agent", content=response["result"]
+            )
             return chat_history.get_all_history()
         except Exception as e:
             logger.error(f"Error in question generation: {str(e)}")
     return chat_history.get_all_history()
 
 
-@app.get("/question")
-async def generate_question():
-    try:
-        if interview_chain is None or base_chain_inputs is None:
-            raise HTTPException(
-                status_code=500, detail="Interview chain not initialized."
-            )
-        logger.info("Generating question using pre-initialized chain")
-        response = interview_chain.invoke(base_chain_inputs)
-        logger.info("Chain invocation completed")
-
-        question_id = chat_history.add(
-            type="question", speaker="agent", content=response["result"]
-        )
-        return {
-            "id": question_id,
-            "content": response["result"],
-        }
-    except Exception as e:
-        logger.error(f"Error in question generation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+RequestType = Literal["question", "followup", "modelAnswer", "answer", "other"]
 
 
-@app.post("/answer")
-async def submit_answer(request: AnswerRequest):
-    question_id = request.questionId
-    content = request.content
-    if not chat_history.validate_question_exists(question_id):
-        raise HTTPException(status_code=404, detail="Cannot find question id.")
-
-    answer_id = chat_history.add(
-        type="answer",
-        speaker="user",
-        content=content,
-        related_chatting_id=question_id,
-    )
-    """
-    답변 평가 await 
-    """
-    evaluate_content = evaluate_chain.invoke(
-        {
-            **base_chain_inputs,
-            "prev_question_answer_pairs": [
-                {
-                    "question": chat_history.get_question_by_id(question_id),
-                    "answer": content,
-                }
-            ],
-        }
-    )
-
-    chat_history.add(
-        type="evaluate",
-        speaker="agent",
-        content=evaluate_content,
-    )
-    return {"id": answer_id, "content": content}
-
-
-@app.get("/assessment")
-async def get_assessment():
-    """
-    평가 결과 반환
-    논리성, 직무적합성, 핵심가치 부합성, 커뮤니케이션 능력
-    """
-    assessment_content = assessment_chain.invoke(
-        {
-            **base_chain_inputs,
-            "chat_history": chat_history.get_all_history_as_string(),
-        }
-    )
-    return assessment_content
-
-
-@app.get("/followUp")
-async def generate_followup(questionId: str):
-    question_id = questionId
-    if chat_history.history is None:
-        raise HTTPException(status_code=400, detail="No chat history yet.")
-    if not chat_history.validate_question_exists(question_id):
-        raise HTTPException(status_code=404, detail="Cannot find question id.")
-
-    try:
-        logger.info("Generating followup using pre-initialized chain")
-        if followup_chain is None or base_chain_inputs is None:
-            raise HTTPException(
-                status_code=500, detail="Followup chain not initialized."
-            )
-
-        answer_item = chat_history.get_answer_by_question_id(question_id)
-        chat_history_every_related = (
-            chat_history.get_chat_history_every_related_by_chatting_id(question_id)
-        )
-        if len(chat_history_every_related) == 0:
-            raise HTTPException(
-                status_code=400, detail="No chat history every related by chatting id."
-            )
-
-        inputs = {
-            **base_chain_inputs,
-            "prev_question_answer_pairs": list(
-                map(
-                    lambda x: {
-                        "type": x.type,
-                        "speaker": x.speaker,
-                        "content": x.content,
-                    },
-                    chat_history_every_related,
-                )
-            ),
-        }
-
-        response = followup_chain.invoke(inputs)
-        question_id = chat_history.add(
-            type="question",
-            speaker="agent",
-            content=response,
-            related_chatting_id=answer_item.id,
-        )
-        logger.info("Followup generated")
-        return {
-            "id": question_id,
-            "content": response,
-        }
-    except Exception as e:
-        logger.error(f"Error in followup generation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/modelAnswer")
-async def generate_model_answer(questionId: str):
-    try:
-        question_item = chat_history.get_question_by_id(questionId)
-        if not question_item:
-            raise HTTPException(status_code=404, detail="Question not found.")
-
-        response = model_answer_chain.invoke(
-            {**base_chain_inputs, "question": question_item.content}
-        )
-        answer_id = chat_history.add(
-            type="modelAnswer",
-            speaker="agent",
-            content=response["result"],
-            related_chatting_id=questionId,  # 질문 ID를 related_chatting_id로 설정
-        )
-        return {"id": answer_id, "content": response["result"]}
-    except Exception as e:
-        logger.error(f"Error in model answer generation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+class RequestInput(BaseModel):
+    type: Optional[RequestType] = None
+    content: str
+    related_chatting_id: Optional[str] = None
 
 
 @app.post("/")
-async def analyze_input(text: str):
+async def analyze_input(request: RequestInput):
+    type = request.type
+    content = request.content
+    related_chatting_id = request.related_chatting_id
+    chat_history.add(type=type, speaker="user", content=content)
+
     try:
         resume = base_chain_inputs["resume"]
         jd = base_chain_inputs["jd"]
@@ -351,6 +233,14 @@ async def analyze_input(text: str):
             chat_history.get_latest_question_id()
         )
         recent_history = chat_history.get_all_history_as_string()
+
+        persona_id = persona_service.invoke_agent(
+            resume=resume, jd=jd, applicant_answer=content
+        )
+
+        persona_info = ""
+        if "null" not in persona_id:
+            persona_info = persona_service.get_persona_str_by_id(persona_id)
 
         input_text = f"""
         다음 입력을 분석해서 먼저 어떤 유형인지 분류하세요.
@@ -402,15 +292,17 @@ async def analyze_input(text: str):
         Thought: 입력을 기반으로 어떤 유형인지 분류했습니다.
             다음으로 적절한 tool을 사용해 응답을 생성하겠습니다.
         Final Answer:
+            최종 결과는 문자열로 반환되고, 불필요한 내용은 제거하세요. 결과물은 한가지 내용이어야 합니다.
+            예시 :  {{질문 내용}} or {{답변 내용}} or {{꼬리질문 내용}}or {{번역 내용}}
         """
         response = agent_executor.invoke({"input": input_text})
-        question_id = chat_history.add(
-            type="question", speaker="agent", content=response["output"]
+        chat_history.add(
+            type="question",
+            speaker="agent",
+            content=response["output"],
+            persona_info=persona_info,
         )
-        return {
-            "id": question_id,
-            "content": response["output"],
-        }
+        return chat_history.get_all_history()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
