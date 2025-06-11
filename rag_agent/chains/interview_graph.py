@@ -147,7 +147,7 @@ you can route it to 'llm'."""
     route = router_chain.invoke({"query": query})
     print("router", route)
 
-    return { "route_type": route }
+    return { "route_type": route["target"] }
 
 
 def generation(state: AgentState) -> AgentState:
