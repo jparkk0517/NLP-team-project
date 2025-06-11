@@ -8,7 +8,7 @@ from ..chat_history.Singleton import Singleton
 
 
 ContentType = Literal[
-    "question", "answer", "modelAnswer", "evaluate", "rerankedModelAnswer"
+    "question", "answer", "modelAnswer", "evaluate", "rerankedModelAnswer", "followup"
 ]
 SpeakerType = Literal["agent", "user"]
 
