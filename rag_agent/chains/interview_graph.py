@@ -307,6 +307,104 @@ JD:
         }
 
 
+def model_answer(state: AgentState) -> AgentState:
+    """
+    STAR 기법 등 구조화된 최적의 모범 답변을 생성하는 LangGraph용 노드 함수.
+    이력서, JD, 회사정보, 이전 Q&A, 질문, 페르소나 등 context를 모두 반영.
+    """
+    try:
+        # 1. 상태에서 정보 추출
+        resume = state.get("resume", "")
+        jd = state.get("jd", "")
+        company_infos = state.get("company", "")
+        prev_question_answer_pairs = state.get("chat_history", "")
+        question = state.get("last_question", "")
+        persona = state.get("persona_id", "")
+        chat_history = state.get("chat_history", "")
+
+        # 2. 프롬프트 템플릿 정의
+        prompt = PromptTemplate.from_template(
+            """
+아래는 AI 면접 시스템에서 지금까지 진행된 대화입니다:
+
+상황:
+{company_infos}
+
+이력서:
+{resume}
+
+직무 설명:
+{jd}
+
+이전 질문/답변 쌍들:
+{prev_question_answer_pairs}
+
+현재 질문:
+{question}
+
+면접관 페르소나:
+{persona}
+
+대화 이력:
+{chat_history}
+
+---
+당신은 위 페르소나를 기반으로 하는 면접관입니다.
+주어진 질문에 대해 최적의 답변을 생성해야 합니다.
+이 답변은 회사의 가치관, 직무 요구사항, 그리고 이력서의 내용을 모두 고려해야 합니다.
+
+답변은 다음 형식을 따라야 합니다:
+
+1. STAR 기법을 활용한 구조화된 답변:
+   - Situation: 상황 설명
+   - Task: 해결해야 할 과제
+   - Action: 취한 행동
+   - Result: 결과와 배운 점
+
+2. 직무 관련성:
+   - JD에서 요구하는 역량과의 연관성
+   - 회사의 핵심 가치와의 부합성
+
+3. 구체성:
+   - 구체적인 숫자와 데이터 포함
+   - 실제 경험 기반의 예시
+
+4. 논리성:
+   - 명확한 인과관계
+   - 체계적인 설명
+
+답변은 한글로 생성해야 한다.
+
+""")
+
+        # 3. LLM 체인 실행
+        chain = prompt | llm | StrOutputParser()
+        result = chain.invoke({
+            "resume": resume,
+            "jd": jd,
+            "company_infos": company_infos,
+            "prev_question_answer_pairs": prev_question_answer_pairs,
+            "question": question,
+            "persona": persona,
+            "chat_history": chat_history,
+        })
+
+        # 4. 결과를 state에 업데이트
+        return {
+            **state,
+            "answer": result
+        }
+
+    except Exception as e:
+        return {
+            **state,
+            "error": f"model_answer_node에서 오류 발생: {str(e)}",
+            "status": "error",
+            "messages": state.get("messages", []) + [
+                {"role": "system", "content": f"오류: {str(e)}"}
+            ]
+        }
+
 def call_llm(state: AgentState) -> AgentState:
     """
     주어진 state에서 쿼리를 LLM에 전달하여 응답을 얻습니다.
@@ -343,7 +441,7 @@ def conditional_router(state: AgentState) -> str:
         "question": "generation",
         "answer": "generation",
         "followup": "followup",
-        "model_answer": "ModelAnswer",
+        "model_answer": "model_answer",
         "interview_answer": "EvaluateFollowup",
         "other": "llm",
     }
@@ -370,6 +468,7 @@ class GraphAgent:
         graph_builder.add_node("generation", generation)
         graph_builder.add_node("followup", followup)
         graph_builder.add_node("llm", call_llm)
+        graph_builder.add_node('model_answer', model_answer)
 
         # 시작점에서 병렬 실행
         graph_builder.add_edge(START, "classify_input")
@@ -383,11 +482,12 @@ class GraphAgent:
         graph_builder.add_edge("generation", END)
         graph_builder.add_edge("followup", END)
         graph_builder.add_edge("llm", END)
+        graph_builder.add_edge('model_answer', END)
 
         graph_builder.add_conditional_edges(
             "router",
             conditional_router,
-            {"generation": "generation", "followup": "followup", "llm": "llm"},
+            {"generation": "generation", "followup": "followup", "llm": "llm", "model_answer": "model_answer"},
         )
 
         self.graph = graph_builder.compile()
