@@ -332,7 +332,7 @@ def conditional_router(state: AgentState) -> str:
     """
     # 상태에서 라우팅 정보 확인
     print(state)
-    next_route = state.get("next_route", "other")
+    next_route = state.get("route_type", "other")
 
     # 그래프 노드 이름과 매핑
     route_mapping = {
