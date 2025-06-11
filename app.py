@@ -16,10 +16,10 @@ import shutil
 
 from rag_agent import (
     ChatHistory,
-    get_evaluate_chain,
-    get_followup_chain,
-    get_interview_chain,
-    get_model_answer_chain,
+    # get_evaluate_chain,
+    # get_followup_chain,
+    # get_interview_chain,
+    # get_model_answer_chain,
     get_initial_message_chain,
     get_reranking_model_answer_chain,
     compare_model_answers,
@@ -30,7 +30,11 @@ from rag_agent.persona.Persona import Persona, PersonaType
 from rag_agent.persona.PersonaService import PersonaInput
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Interview Simulator")
@@ -112,7 +116,7 @@ async def load_local_data():
     docs = []
     for fname in os.listdir(company_dir):
         text = parse_file_to_text(os.path.join(company_dir, fname))
-        splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        splitter = CharacterTextSplitter(chunk_size=512, chunk_overlap=50)
         for chunk in splitter.split_text(text):
             docs.append(Document(page_content=chunk, metadata={"filename": fname}))
     embeddings = OpenAIEmbeddings()
@@ -128,10 +132,10 @@ async def load_local_data():
     # 사전 계산: 회사 정보와 체인 초기화
     stored_company_info = get_company_info()
     init_message_chain = get_initial_message_chain()
-    interview_chain = get_interview_chain()
-    followup_chain = get_followup_chain()
-    evaluate_chain = get_evaluate_chain()
-    model_answer_chain = get_model_answer_chain()
+    # interview_chain = get_interview_chain()
+    # followup_chain = get_followup_chain()
+    # evaluate_chain = get_evaluate_chain()
+    # model_answer_chain = get_model_answer_chain()
     # assessment_chain = get_assessment_chain()
     reranking_model_answer_chain = get_reranking_model_answer_chain()
     base_chain_inputs = {
@@ -329,135 +333,135 @@ async def delete_persona(persona_id: str):
     return None
 
 
-@app.get("/rerankedModelAnswer")
-async def generate_reranked_model_answer(questionId: str):
-    try:
-        question_item = chat_history.get_question_by_id(questionId)
-        if not question_item:
-            raise HTTPException(status_code=404, detail="Question not found.")
+# @app.get("/rerankedModelAnswer")
+# async def generate_reranked_model_answer(questionId: str):
+#     try:
+#         question_item = chat_history.get_question_by_id(questionId)
+#         if not question_item:
+#             raise HTTPException(status_code=404, detail="Question not found.")
 
-        # 이전 질문/답변 쌍들 가져오기
-        prev_pairs = []
-        for item in chat_history.history:
-            if item.type == "question" and item.related_chatting_id:
-                answer = next(
-                    (
-                        a
-                        for a in chat_history.history
-                        if a.id == item.related_chatting_id
-                    ),
-                    None,
-                )
-                if answer:
-                    prev_pairs.append(
-                        {"question": item.content, "answer": answer.content}
-                    )
+#         # 이전 질문/답변 쌍들 가져오기
+#         prev_pairs = []
+#         for item in chat_history.history:
+#             if item.type == "question" and item.related_chatting_id:
+#                 answer = next(
+#                     (
+#                         a
+#                         for a in chat_history.history
+#                         if a.id == item.related_chatting_id
+#                     ),
+#                     None,
+#                 )
+#                 if answer:
+#                     prev_pairs.append(
+#                         {"question": item.content, "answer": answer.content}
+#                     )
 
-        # 원본 모델 답변 가져오기
-        original_answer = next(
-            (
-                item
-                for item in chat_history.history
-                if item.type == "modelAnswer" and item.related_chatting_id == questionId
-            ),
-            None,
-        )
-        if not original_answer:
-            raise HTTPException(
-                status_code=404, detail="Original model answer not found."
-            )
+#         # 원본 모델 답변 가져오기
+#         original_answer = next(
+#             (
+#                 item
+#                 for item in chat_history.history
+#                 if item.type == "modelAnswer" and item.related_chatting_id == questionId
+#             ),
+#             None,
+#         )
+#         if not original_answer:
+#             raise HTTPException(
+#                 status_code=404, detail="Original model answer not found."
+#             )
 
-        # reranking 답변 3개 생성
-        reranked_responses = []
-        for _ in range(3):
-            response = reranking_model_answer_chain.invoke(
-                {
-                    **base_chain_inputs,
-                    "question": question_item.content,
-                    "prev_question_answer_pairs": prev_pairs,
-                }
-            )
-            reranked_responses.append(response["result"])
+#         # reranking 답변 3개 생성
+#         reranked_responses = []
+#         for _ in range(3):
+#             response = reranking_model_answer_chain.invoke(
+#                 {
+#                     **base_chain_inputs,
+#                     "question": question_item.content,
+#                     "prev_question_answer_pairs": prev_pairs,
+#                 }
+#             )
+#             reranked_responses.append(response["result"])
 
-        # 각 답변을 원본과 비교하여 점수 계산
-        best_score = -1
-        best_answer = None
-        for answer in reranked_responses:
-            comparison = compare_model_answers(original_answer.content, answer)
-            score = comparison["overall"]["reranked_total"]
-            if score > best_score:
-                best_score = score
-                best_answer = answer
+#         # 각 답변을 원본과 비교하여 점수 계산
+#         best_score = -1
+#         best_answer = None
+#         for answer in reranked_responses:
+#             comparison = compare_model_answers(original_answer.content, answer)
+#             score = comparison["overall"]["reranked_total"]
+#             if score > best_score:
+#                 best_score = score
+#                 best_answer = answer
 
-        answer_id = chat_history.add(
-            type="rerankedModelAnswer",
-            speaker="agent",
-            content=best_answer,
-            related_chatting_id=questionId,
-        )
-        return {"id": answer_id, "content": best_answer}
-    except Exception as e:
-        logger.error(f"Error in reranked model answer generation: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+#         answer_id = chat_history.add(
+#             type="rerankedModelAnswer",
+#             speaker="agent",
+#             content=best_answer,
+#             related_chatting_id=questionId,
+#         )
+#         return {"id": answer_id, "content": best_answer}
+#     except Exception as e:
+#         logger.error(f"Error in reranked model answer generation: {str(e)}")
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/compareModelAnswers")
-async def compare_answers(questionId: str):
-    try:
-        # 디버깅을 위한 로깅 추가
-        logger.info(f"Searching for answers related to questionId: {questionId}")
-        logger.info(
-            f"Current chat history: {[{'type': item.type, 'id': item.id, 'related_id': item.related_chatting_id} for item in chat_history.history]}"
-        )
+# @app.get("/compareModelAnswers")
+# async def compare_answers(questionId: str):
+#     try:
+#         # 디버깅을 위한 로깅 추가
+#         logger.info(f"Searching for answers related to questionId: {questionId}")
+#         logger.info(
+#             f"Current chat history: {[{'type': item.type, 'id': item.id, 'related_id': item.related_chatting_id} for item in chat_history.history]}"
+#         )
 
-        # 원본 모델 답변 가져오기
-        original_answer = None
-        for item in chat_history.history:
-            if item.type == "modelAnswer" and item.related_chatting_id == questionId:
-                original_answer = item
-                logger.info(f"Found original answer with id: {item.id}")
-                break
+#         # 원본 모델 답변 가져오기
+#         original_answer = None
+#         for item in chat_history.history:
+#             if item.type == "modelAnswer" and item.related_chatting_id == questionId:
+#                 original_answer = item
+#                 logger.info(f"Found original answer with id: {item.id}")
+#                 break
 
-        if not original_answer:
-            logger.error(
-                f"Original model answer not found for questionId: {questionId}"
-            )
-            raise HTTPException(
-                status_code=404,
-                detail="Original model answer not found. Please generate a model answer first using /modelAnswer endpoint.",
-            )
+#         if not original_answer:
+#             logger.error(
+#                 f"Original model answer not found for questionId: {questionId}"
+#             )
+#             raise HTTPException(
+#                 status_code=404,
+#                 detail="Original model answer not found. Please generate a model answer first using /modelAnswer endpoint.",
+#             )
 
-        # Reranking된 모델 답변 가져오기
-        reranked_answer = None
-        for item in chat_history.history:
-            if (
-                item.type == "rerankedModelAnswer"
-                and item.related_chatting_id == questionId
-            ):
-                reranked_answer = item
-                logger.info(f"Found reranked answer with id: {item.id}")
-                break
+#         # Reranking된 모델 답변 가져오기
+#         reranked_answer = None
+#         for item in chat_history.history:
+#             if (
+#                 item.type == "rerankedModelAnswer"
+#                 and item.related_chatting_id == questionId
+#             ):
+#                 reranked_answer = item
+#                 logger.info(f"Found reranked answer with id: {item.id}")
+#                 break
 
-        if not reranked_answer:
-            logger.error(
-                f"Reranked model answer not found for questionId: {questionId}"
-            )
-            raise HTTPException(
-                status_code=404,
-                detail="Reranked model answer not found. Please generate a reranked answer first using /rerankedModelAnswer endpoint.",
-            )
+#         if not reranked_answer:
+#             logger.error(
+#                 f"Reranked model answer not found for questionId: {questionId}"
+#             )
+#             raise HTTPException(
+#                 status_code=404,
+#                 detail="Reranked model answer not found. Please generate a reranked answer first using /rerankedModelAnswer endpoint.",
+#             )
 
-        # 답변 비교
-        logger.info("Comparing answers...")
-        comparison_result = compare_model_answers(
-            original_answer.content, reranked_answer.content
-        )
-        logger.info("Comparison completed successfully")
+#         # 답변 비교
+#         logger.info("Comparing answers...")
+#         comparison_result = compare_model_answers(
+#             original_answer.content, reranked_answer.content
+#         )
+#         logger.info("Comparison completed successfully")
 
-        return comparison_result
-    except Exception as e:
-        logger.error(f"Error in comparing model answers: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+#         return comparison_result
+#     except Exception as e:
+#         logger.error(f"Error in comparing model answers: {str(e)}")
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 app.mount("/", StaticFiles(directory=dist_path, html=True), name="frontend")
