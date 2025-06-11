@@ -138,44 +138,48 @@ class PersonaService(Singleton):
         print("available_personas_json", available_personas_json)
         template = PromptTemplate(
             template="""     
-            You are an AI agent responsible for selecting the most appropriate persona for a job applicant based on the provided context.
+You are an AI agent responsible for selecting the most appropriate persona for a job applicant based on the provided context.
 
-            Instructions:
-            - Analyze the applicant's resume, job description (JD) and applicant's interview answer.
-            - Evaluate all available personas.
-            - Select the single most appropriate persona based on similarity of interests, communication style, and role type.
-            - From the provided persona list, choose the single most appropriate **persona ID**.
-            - Do not explain your reasoning unless asked.
-            - Return ONLY the selected persona's ID in the format: Action Input: <persona_id>
-            
-            ---
-            resume:
-            {resume}
-            
-            job description:
-            {jd}
-            
-            applicant's interview response or input:
-            {applicant_answer}
-            
-            available_personas_json: 
-            {available_personas_json}
-                        
-            ---
-            You must follow the format below exactly:
+Instructions:
+- Analyze the applicant's resume, job description (JD) and applicant's interview answer.
+- Evaluate all available personas.
+- Select the single most appropriate persona based on similarity of interests, communication style, and role type.
+- From the provided persona list, choose the single most appropriate **persona ID**.
+- Do not explain your reasoning unless asked.
+- Return ONLY the selected persona's ID in the format: Action Input: <persona_id>
 
-            Thought: your internal reasoning 
-            Final Answer: persona_id (or null if no persona is available)       
+---
+resume:
+{resume}
 
-            You must always end your response with a valid Final Answer.
-            Failure to do so will cause the system to fail.
-            Do not respond with "I don't know" or "I can't answer that". Always choose the best matching persona from the list.
+job description:
+{jd}
+
+applicant's interview response or input:
+{applicant_answer}
+
+available_personas_json: 
+{available_personas_json}
             
-            ---
+---
+You must follow the process below exactly:
 
-            Begin:
+Thought: your internal reasoning 
+Final Answer: persona_id (or null if no persona is available)       
 
-            Question: What is the ID of the most appropriate persona for this applicant?
+You must always end your response with a valid Final Answer.
+Failure to do so will cause the system to fail.
+Do not respond with "I don't know" or "I can't answer that". Always choose the best matching persona from the list.
+ONLY return the <persona_id> as output.
+
+Follow the Output Format:
+<persona_id>
+
+---
+
+Begin:
+
+Question: What is the ID of the most appropriate persona for this applicant?
             """,
             input_variables=[
                 "resume",

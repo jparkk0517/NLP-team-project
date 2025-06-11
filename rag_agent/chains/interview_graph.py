@@ -29,9 +29,9 @@ from rag_agent import ChatHistory
 
 
 class Route(BaseModel):
-    target: Literal[
-        "generate_question", "generate_model_answer", "generate_followup", "llm"
-    ] = Field(description="The target for the query to answer")
+    target: Literal['question', 'model_answer', 'followup', 'llm'] = Field(
+        description="The target for the query to answer"
+    )
 
 
 class AgentState(TypedDict):
