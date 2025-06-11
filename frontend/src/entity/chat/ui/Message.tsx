@@ -1,4 +1,4 @@
-import type { ChatHistoryDTO } from '../../../shared/type';
+import type { ChatHistoryDTO, PersonaDTO } from '../../../shared/type';
 import { useRef } from 'react';
 import { useEffect } from 'react';
 
@@ -13,12 +13,12 @@ const UserIcon = () => {
   );
 };
 
-const AgentIcon = () => {
+const AgentIcon = ({ persona }: { persona?: PersonaDTO }) => {
   return (
     <div className=''>
       <span
         className={`text-black rounded-full p-2 w-[50px] h-[50px] flex items-center justify-center m-2 bg-yellow-300`}>
-        Agent
+        {persona?.name ?? 'Agent'}
       </span>
     </div>
   );
@@ -32,11 +32,13 @@ const Content = ({
   textAlign?: 'left' | 'right';
 }) => {
   return (
-    <div className='flex flex-col justify-end  max-w-[70%] '>
+    <div className='flex flex-col justify-end max-w-[80%]'>
       <div
-        className={`p-2 text-gray-500 rounded-md bg-gray-200 p-2max-h-[300px] overflow-scroll ${
-          textAlign === 'right' ? 'flex-row-reverse' : ''
-        }`}>
+        className={`
+          p-2 text-gray-500 rounded-md bg-gray-200 max-w-[70%] max-h-[300px] overflow-scroll
+          ${textAlign === 'right' ? 'flex-row-reverse' : ''}
+          scrollbar-hide
+        `}>
         {content}
       </div>
     </div>
@@ -47,6 +49,7 @@ const Message = ({
   speaker,
   content,
   isLastMessage,
+  persona,
 }: ChatHistoryDTO & {
   isLastMessage: boolean;
 }) => {
@@ -66,7 +69,7 @@ const Message = ({
       {isAgent ? (
         <>
           <div className='flex p-2'>
-            <AgentIcon />
+            <AgentIcon persona={persona} />
             <Content content={content} />
           </div>
         </>

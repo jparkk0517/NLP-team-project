@@ -1,9 +1,15 @@
-from typing import Literal, Optional
+import json
+from langchain.prompts import PromptTemplate
+from typing import Literal, Optional, Self
 from uuid import uuid4
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from datetime import datetime
+from ..chat_history.Singleton import Singleton
 
 
-ContentType = Literal["question", "answer", "modelAnswer", "evaluate"]
+ContentType = Literal[
+    "question", "answer", "modelAnswer", "evaluate", "rerankedModelAnswer"
+]
 SpeakerType = Literal["agent", "user"]
 
 
@@ -13,10 +19,16 @@ class ChatItem(BaseModel):
     speaker: SpeakerType  # "agent" | "user"
     content: str
     related_chatting_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    persona: Optional[dict] = None
 
 
-class ChatHistory(BaseModel):
-    history: list[ChatItem] = []
+class ChatHistory(Singleton):
+    def __init__(self):
+        if hasattr(self, "_initialized"):
+            return
+        self._initialized = True
+        self.history = []
 
     def add(
         self,
@@ -24,6 +36,7 @@ class ChatHistory(BaseModel):
         speaker: SpeakerType,
         content: str,
         related_chatting_id: Optional[str] = None,
+        persona_info: Optional[str] = None,
     ) -> str:
         id = str(uuid4().hex[:8])
         self.history.append(
@@ -33,6 +46,7 @@ class ChatHistory(BaseModel):
                 speaker=speaker,
                 content=content,
                 related_chatting_id=related_chatting_id,
+                persona=json.loads(persona_info) if persona_info else None,
             )
         )
         return id
@@ -78,21 +92,15 @@ class ChatHistory(BaseModel):
 
     def get_all_history_as_string(self) -> str:
         return "\n".join(
-            [
-                f"{item.speaker}: {item.content}"
-                for item in self.history
-                if item.type == "question" or item.type == "answer"
-            ]
+            [f"{item.speaker}({item.id}): {item.content}" for item in self.history]
         )
 
-    # def add_question(self, question: str):
-    #     self.question_history.append(
-    #         {"question_id": len(self.question_history), "question": question}
-    #     )
-
-    #     return self.question_history[-1]["question_id"]
-
-    # def add_answer(self, question_id: str, answer: str):
-    #     self.answer_history.append({"question_id": question_id, "answer": answer})
-
-    #     return self.answer_history[-1]["question_id"]
+    def get_chat_history_context_prompt(self) -> PromptTemplate:
+        return PromptTemplate(
+            template=f"""
+            [상황]
+            당신은 지원자의 이력서와 직무 설명서를 보고 지원자를 평가하고 있습니다.
+            현재까지 면접의 대화 내용은 다음과 같습니다.
+            {self.get_all_history_as_string()}
+            """,
+        )

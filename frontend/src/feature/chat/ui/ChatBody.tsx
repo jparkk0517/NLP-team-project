@@ -20,8 +20,8 @@ const ChatBody = () => {
 
   return (
     <div
-      className='flex flex-col border-b-2 border-gray-300 overflow-scroll flex-grow'
-      style={{ height: 'calc(95% - 100px)' }}>
+      className='flex flex-col border-b-2 border-gray-300 overflow-scroll scrollbar-hide hover:scrollbar flex-grow'
+      style={{ height: '78%' }}>
       {messages}
       <div ref={chatEndRef} />
     </div>

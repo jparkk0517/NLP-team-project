@@ -19,6 +19,15 @@ const Api = {
     });
     return response.json();
   },
+  DELETE: async <R>(url: string): Promise<R> => {
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    return response.json();
+  },
 };
 
 export { Api };
