@@ -29,7 +29,7 @@ from rag_agent import ChatHistory
 
 
 class Route(BaseModel):
-    target: Literal['question', 'model_answer', 'followup', 'llm'] = Field(
+    target: Literal["question", "model_answer", "followup", "llm"] = Field(
         description="The target for the query to answer"
     )
 
@@ -51,6 +51,7 @@ llm = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY"), temperature=0.7, model_name="gpt-4o-mini"
 )
 
+
 def classify_input(state: AgentState) -> AgentState:
     """
     사용자 입력과, 이전 대화내용을 바탕으로 현재 입력이 어떤 형식인지 분류하고,
@@ -65,8 +66,9 @@ def classify_input(state: AgentState) -> AgentState:
 
     query = state.get("query", "")
     print("classify_input > query >", query)
-    
-    classify_prompt = PromptTemplate.from_template("""
+
+    classify_prompt = PromptTemplate.from_template(
+        """
 주어진 query와 chat_history를 바탕으로 입력이 어떤 유형인지 판단하세요: 
 - 면접질문 요청 (question)
 - 꼬리질문 요청 (followup)
@@ -78,17 +80,16 @@ def classify_input(state: AgentState) -> AgentState:
 사용자 입력:
 {query}
 
-형식: question, followup, modelAnswer, answer, other 중 하나로만 답하세요.""")
-    
-    router_chain = classify_prompt | llm | StrOutputParser() 
-    result = router_chain.invoke({'query': query})
-    
+형식: question, followup, modelAnswer, answer, other 중 하나로만 답하세요."""
+    )
+
+    router_chain = classify_prompt | llm | StrOutputParser()
+    result = router_chain.invoke({"query": query})
+
     print("classify_input > result >", result)
-    
+
     # 결과 메시지를 업데이트하고 router node로 이동합니다.
-    return { 
-        "input_type": result
-    }
+    return {"input_type": result}
 
 
 persona_service = PersonaService.get_instance()
@@ -97,14 +98,14 @@ chat_history = ChatHistory.get_instance()
 
 def assign_persona_node(state: AgentState) -> AgentState:
     """페르소나 할당 node입니다. 주어진 state를 기반으로 assign_persona 에이전트를 호출하고,
-결과를 router node로 전달합니다.
+    결과를 router node로 전달합니다.
 
-Args:
-    state (AgentState): 현재 메시지 상태 객체.
+    Args:
+        state (AgentState): 현재 메시지 상태 객체.
 
-Returns:
-    Command: router node로 이동 명령을 반환."""
-    
+    Returns:
+        Command: router node로 이동 명령을 반환."""
+
     resume = state.get("resume", "")
     jd = state.get("jd", "")
     company = state.get("company", "")
@@ -126,7 +127,7 @@ def router(state: AgentState) -> AgentState:
     Returns:
         Literal['question', 'model_answer', 'followup', 'llm']: 쿼리에 따라 선택된 경로를 반환합니다.
     """
-    
+
     query = state["query"]
     router_system_prompt = """
 You are an expert at routing a user's input type to 'question', 'model_answer', 'followup' or 'llm'.
@@ -147,7 +148,7 @@ you can route it to 'llm'."""
     route = router_chain.invoke({"query": query})
     print("router", route)
 
-    return { "route_type": route["target"] }
+    return {"route_type": route.target}
 
 
 def generation(state: AgentState) -> AgentState:
@@ -313,10 +314,10 @@ def call_llm(state: AgentState) -> AgentState:
     Returns:
         AgentState: 'answer' 키를 포함하는 새로운 state를 반환합니다.
     """
-    query = state['query']
+    query = state["query"]
     llm_chain = llm | StrOutputParser()
     llm_answer = llm_chain.invoke(query)
-    return {'answer': llm_answer }
+    return {"answer": llm_answer}
 
 
 def conditional_router(state: AgentState) -> str:
@@ -335,16 +336,16 @@ def conditional_router(state: AgentState) -> str:
 
     # 그래프 노드 이름과 매핑
     route_mapping = {
-        'generation': 'generation',
-        'question': 'generation',
-        'answer': 'generation',
-        'followup': 'followup',
-        'model_answer': 'ModelAnswer', 
-        'interview_answer': 'EvaluateFollowup',
-        'other': 'llm'
+        "generation": "generation",
+        "question": "generation",
+        "answer": "generation",
+        "followup": "followup",
+        "model_answer": "ModelAnswer",
+        "interview_answer": "EvaluateFollowup",
+        "other": "llm",
     }
-    
-    return route_mapping.get(next_route, 'llm')
+
+    return route_mapping.get(next_route, "llm")
 
 
 class GraphAgent:
@@ -365,7 +366,7 @@ class GraphAgent:
         graph_builder.add_node("router", router)
         graph_builder.add_node("generation", generation)
         graph_builder.add_node("followup", followup)
-        graph_builder.add_node('llm', call_llm)
+        graph_builder.add_node("llm", call_llm)
 
         # 시작점에서 병렬 실행
         graph_builder.add_edge(START, "classify_input")
@@ -377,8 +378,8 @@ class GraphAgent:
 
         # 생성 노드에서 종료
         graph_builder.add_edge("generation", END)
-        graph_builder.add_edge('followup', END)
-        graph_builder.add_edge('llm', END)
+        graph_builder.add_edge("followup", END)
+        graph_builder.add_edge("llm", END)
 
         graph_builder.add_conditional_edges(
             "router",
