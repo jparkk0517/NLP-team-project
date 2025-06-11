@@ -285,7 +285,36 @@ async def analyze_input(request: RequestInput):
                     Action Input: {{ "input_text": reasoning, "chat_history": "{recent_history}" }}
             Thought: 충분한 답변이라면 꼬리질문은 생략하세요.
 
-        4. 분류된 유형이 'other'이면:
+        4. 분류된 유형이 'modelAnswer'이면:
+            Action: generate_model_answer
+            Action Input: {json.dumps({
+                "question": last_question.content if last_question else "",
+                "resume": resume,
+                "jd": jd,
+                "company": company,
+                "chat_history": recent_history,
+                "persona": persona_info
+            }, ensure_ascii=False)}
+            Observation: 모범 답변 생성됨
+
+            Thought: 생성된 모범 답변을 reranking을 통해 최적화하겠습니다.
+            Action: generate_reranked_answers
+            Action Input: {json.dumps({
+                "original_answer": "{{model_answer}}",
+                "question": last_question.content if last_question else "",
+                "prev_question_answer_pairs": [],  # 이전 Q&A 쌍 추가
+            }, ensure_ascii=False)}
+            Observation: reranking된 답변들 생성됨
+
+            Thought: reranking된 답변들 중 가장 좋은 답변을 선택하겠습니다.
+            Action: compare_answers
+            Action Input: {json.dumps({
+                "original_answer": "{{model_answer}}",
+                "reranked_answers": "{{reranked_answers}}"
+            }, ensure_ascii=False)}
+            Observation: 최적의 답변 선택됨
+
+        5. 분류된 유형이 'other'이면:
             Action: translate_to_korean
             Action Input: '{content}'
             
@@ -296,15 +325,62 @@ async def analyze_input(request: RequestInput):
             다음으로 적절한 tool을 사용해 응답을 생성하겠습니다.
         Final Answer:
             최종 결과는 문자열로 반환되고, 불필요한 내용은 제거하세요. 결과물은 한가지 내용이어야 합니다.
-            예시 :  {{질문 내용}} or {{답변 내용}} or {{꼬리질문 내용}}or {{번역 내용}}
+            예시 :  {{질문 내용}} or {{답변 내용}} or {{꼬리질문 내용}} or {{번역 내용}} or {{모범 답변 내용}}
         """
         response = agent_executor.invoke({"input": input_text})
-        chat_history.add(
-            type="question",
-            speaker="agent",
-            content=response["output"],
-            persona_info=persona_info,
-        )
+        
+        # modelAnswer 타입일 때만 reranking 수행
+        if type == "modelAnswer":
+            original_answer = response["output"]
+            
+            # 이전 질문/답변 쌍들 가져오기
+            prev_pairs = []
+            for item in chat_history.history:
+                if item.type == "question" and item.related_chatting_id:
+                    answer = next(
+                        (a for a in chat_history.history if a.id == item.related_chatting_id),
+                        None,
+                    )
+                    if answer:
+                        prev_pairs.append({"question": item.content, "answer": answer.content})
+            
+            # reranking 답변 3개 생성
+            reranked_responses = []
+            for _ in range(3):
+                reranked_response = reranking_model_answer_chain.invoke({
+                    **base_chain_inputs,
+                    "question": last_question.content if last_question else "",
+                    "prev_question_answer_pairs": prev_pairs,
+                })
+                reranked_responses.append(reranked_response["result"])
+
+            # 각 답변을 원본과 비교하여 점수 계산
+            best_score = -1
+            best_answer = original_answer
+            for answer in reranked_responses:
+                comparison = compare_model_answers(original_answer, answer)
+                score = comparison["overall"]["reranked_total"]
+                if score > best_score:
+                    best_score = score
+                    best_answer = answer
+
+            # 최종 답변 저장
+            chat_history.add(
+                type="modelAnswer",
+                speaker="agent",
+                content=best_answer,
+                related_chatting_id=related_chatting_id,
+                persona_info=persona_info,
+            )
+        else:
+            # reranking이 필요없는 경우 원본 응답 저장
+            chat_history.add(
+                type="question",
+                speaker="agent",
+                content=response["output"],
+                persona_info=persona_info,
+            )
+            
         return chat_history.get_all_history()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
