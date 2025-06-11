@@ -282,7 +282,7 @@ async def analyze_input(request: RequestInput):
                 - Action: generate_followup_reasoning
                     Action Input: {{ "input_text": "{content}", "chat_history": "{recent_history}" }}
                 - Action: generate_followup_acting
-                    Action Input: {{ "input_text": reasoning, "chat_history": "{recent_history}" }}
+                    Action Input: {{ "input_text": "{content}", "reasoning": reasoning }}
             Thought: 충분한 답변이라면 꼬리질문은 생략하세요.
 
         4. 분류된 유형이 'modelAnswer'이면:
