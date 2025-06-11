@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from langchain.prompts import PromptTemplate
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain_core.runnables import RunnableLambda
+from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 
 import json  # JSON 직렬화를 위해 필요
 
@@ -124,7 +125,7 @@ class PersonaService(Singleton):
 
     def get_all_persona_info(self) -> str:
         return [p.get_persona_info() if p else None for p in self.persona_list]
-
+    
     def invoke_agent(
         self,
         resume: str,
@@ -133,35 +134,10 @@ class PersonaService(Singleton):
         applicant_answer: Optional[str] = None,
         interviewer_question: Optional[str] = None,  # 지원자가 받은 질문
     ) -> str:
-        """
-        Agent를 호출하여 사용자 쿼리에 대한 응답을 생성합니다.
-        다양한 면접 관련 맥락 정보를 Agent에 전달합니다.
-        """
-        # 현재 등록된 페르소나 리스트를 JSON 문자열로 변환하여 도구에 전달할 준비
-        available_personas_json = json.dumps(
-            [p.get_persona_info() for p in self.persona_list], ensure_ascii=False
-        )
-
-        # Agent의 'input'에 전달할 맥락 정보 딕셔너리 구성
-        # 이 정보들은 Agent의 Thought 과정에서 도구 인자로 활용될 수 있도록 LLM이 참조합니다.
-        context_for_agent_input = {
-            "resume": resume,
-            "jd": jd,
-            "company_infos": company_infos,
-            "applicant_answer": applicant_answer,
-            "interviewer_question": interviewer_question,  # 지원자가 받은 질문
-            "available_personas_json": available_personas_json,  # 페르소나 할당 도구가 이 정보를 참조할 수 있도록
-        }
-
-        # Agent Executor를 호출합니다.
-        # `input` 키에 사용자 쿼리가 들어가고, 나머지 정보는 LLM이 판단하여 도구 인자로 활용합니다.
-        # LLM이 도구 인자로 JSON을 생성하도록 유도하는 것은 프롬프트의 역할이 중요합니다.
-        try:
-            # invoke 호출 시 모든 관련 맥락 정보를 전달
-            # Agent의 프롬프트와 도구 설명이 이 정보를 바탕으로 적절한 도구를 선택하도록 안내해야 합니다.
-            # 예를 들어, user_query에 "페르소나 할당"과 같은 키워드가 있거나,
-            # applicant_answer가 제공되면 "평가/모범 답변 생성" 도구를 사용하도록 유도합니다.
-            persona_query = f"""
+        available_personas_json = [p.get_persona_info() for p in self.persona_list]
+        print("available_personas_json", available_personas_json)
+        template = PromptTemplate(
+            template="""     
             You are an AI agent responsible for selecting the most appropriate persona for a job applicant based on the provided context.
 
             Instructions:
@@ -200,13 +176,21 @@ class PersonaService(Singleton):
             Begin:
 
             Question: What is the ID of the most appropriate persona for this applicant?
-            """
-        
-            result = agent_executor.invoke({"input": persona_query})
-            
-            # AgentExecutor의 결과는 딕셔너리 형태로 반환되며, 최종 답변은 'output' 키에 있습니다.
-            final_answer = result.get("output", "Agent가 답변을 생성하지 못했습니다.")
-            return final_answer
-        except Exception as e:
-            print(f"Agent 호출 중 오류 발생: {e}")
-            return "죄송합니다, 요청을 처리하는 중 오류가 발생했습니다."
+            """,
+            input_variables=[
+                "resume",
+                "jd",
+                "applicant_answer",
+                "available_personas_json",
+            ],
+        )
+        chain = template | llm | StrOutputParser()
+        return chain.invoke(
+            {
+                "resume": resume,
+                "jd": jd,
+                "applicant_answer": applicant_answer,
+                "available_personas_json": available_personas_json,
+                "interviewer_question": interviewer_question,
+            }
+        )

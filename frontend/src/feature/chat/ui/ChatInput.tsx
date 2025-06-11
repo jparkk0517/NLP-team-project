@@ -33,7 +33,7 @@ const ChatInput = () => {
 
   const handleStaticAction = useCallback(
     async (action: 'followUpQuestion' | 'bestAnswer' | 'nextQuestion') => {
-      if (!inputable || !lastMessage) return;
+      if (!lastMessage) return;
       try {
         if (action === 'followUpQuestion') {
           form.setFieldsValue({ message: '꼬리질문 해줘' });
@@ -52,15 +52,7 @@ const ChatInput = () => {
         form.resetFields();
       }
     },
-    [
-      bestAnswer,
-      followUpQuestion,
-      form,
-      inputable,
-      lastMessage,
-      nextQuestion,
-      queryClient,
-    ]
+    [bestAnswer, followUpQuestion, form, lastMessage, nextQuestion, queryClient]
   );
 
   useEffect(() => {
