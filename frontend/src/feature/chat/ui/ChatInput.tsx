@@ -33,7 +33,6 @@ const ChatInput = () => {
 
   const handleStaticAction = useCallback(
     async (action: 'followUpQuestion' | 'bestAnswer' | 'nextQuestion') => {
-      if (!inputable || !lastMessage) return;
       try {
         if (action === 'followUpQuestion') {
           form.setFieldsValue({ message: '꼬리질문 해줘' });
