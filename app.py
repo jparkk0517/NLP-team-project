@@ -339,7 +339,7 @@ async def analyze_input(request: RequestInput):
         response = agent.run(content)
         # modelAnswer 타입일 때만 reranking 수행
         if type == "modelAnswer":
-            original_answer = response["output"]
+            original_answer = response.get("answer", "")
 
             # 이전 질문/답변 쌍들 가져오기
             prev_pairs = []
@@ -393,7 +393,7 @@ async def analyze_input(request: RequestInput):
             chat_history.add(
                 type="question",
                 speaker="agent",
-                content=response["output"],
+                content=response.get("answer", ""),
                 persona_info=persona_info,
             )
 
