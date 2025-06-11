@@ -302,7 +302,7 @@ async def analyze_input(request: RequestInput):
             Action Input: {json.dumps({
                 "original_answer": "{{model_answer}}",
                 "question": last_question.content if last_question else "",
-                "prev_question_answer_pairs": [],  # 이전 Q&A 쌍 추가
+                "prev_question_answer_pairs": [],
             }, ensure_ascii=False)}
             Observation: reranking된 답변들 생성됨
 
@@ -328,30 +328,38 @@ async def analyze_input(request: RequestInput):
             예시 :  {{질문 내용}} or {{답변 내용}} or {{꼬리질문 내용}} or {{번역 내용}} or {{모범 답변 내용}}
         """
         response = agent_executor.invoke({"input": input_text})
-        
+
         # modelAnswer 타입일 때만 reranking 수행
         if type == "modelAnswer":
             original_answer = response["output"]
-            
+
             # 이전 질문/답변 쌍들 가져오기
             prev_pairs = []
             for item in chat_history.history:
                 if item.type == "question" and item.related_chatting_id:
                     answer = next(
-                        (a for a in chat_history.history if a.id == item.related_chatting_id),
+                        (
+                            a
+                            for a in chat_history.history
+                            if a.id == item.related_chatting_id
+                        ),
                         None,
                     )
                     if answer:
-                        prev_pairs.append({"question": item.content, "answer": answer.content})
-            
+                        prev_pairs.append(
+                            {"question": item.content, "answer": answer.content}
+                        )
+
             # reranking 답변 3개 생성
             reranked_responses = []
             for _ in range(3):
-                reranked_response = reranking_model_answer_chain.invoke({
-                    **base_chain_inputs,
-                    "question": last_question.content if last_question else "",
-                    "prev_question_answer_pairs": prev_pairs,
-                })
+                reranked_response = reranking_model_answer_chain.invoke(
+                    {
+                        **base_chain_inputs,
+                        "question": last_question.content if last_question else "",
+                        "prev_question_answer_pairs": prev_pairs,
+                    }
+                )
                 reranked_responses.append(reranked_response["result"])
 
             # 각 답변을 원본과 비교하여 점수 계산
@@ -380,7 +388,7 @@ async def analyze_input(request: RequestInput):
                 content=response["output"],
                 persona_info=persona_info,
             )
-            
+
         return chat_history.get_all_history()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
