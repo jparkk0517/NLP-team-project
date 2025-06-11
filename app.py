@@ -26,6 +26,7 @@ from rag_agent import (
     agent_executor,
     PersonaService,
 )
+from rag_agent.chains.interview_graph import GraphAgent
 from rag_agent.persona.Persona import Persona, PersonaType
 from rag_agent.persona.PersonaService import PersonaInput
 
@@ -210,6 +211,13 @@ class RequestInput(BaseModel):
     related_chatting_id: Optional[str] = None
 
 
+agent = GraphAgent(
+    resume=stored_resume,
+    jd=stored_jd,
+    company=stored_company_info,
+)
+
+
 @app.post("/")
 async def analyze_input(request: RequestInput):
     type = request.type
@@ -233,102 +241,102 @@ async def analyze_input(request: RequestInput):
         if "null" not in persona_id:
             persona_info = persona_service.get_persona_str_by_id(persona_id)
 
-        input_text = f"""
-        다음 입력을 분석해서 먼저 어떤 유형인지 분류하세요.
-        그 후 적절한 tool을 사용해 응답을 생성하세요.
-        
-        입력: '{content}'
+        # input_text = f"""
+        # 다음 입력을 분석해서 먼저 어떤 유형인지 분류하세요.
+        # 그 후 적절한 tool을 사용해 응답을 생성하세요.
 
-        가능한 처리 흐름:
-        1. Action: classify_input
-            Action Input: {
-                json.dumps({
-                    "request": {
-                        "type": type,
-                        "content": content,
-                        "related_chatting_id": related_chatting_id,
-                    },
-                    "chat_history": recent_history,
-                }, ensure_ascii=False)
-            }
-            Observation: 입력 유형을 분류함
-        
-        2. 분류된 유형이 'question'이면:
-            Action: generate_question_reasoning
-            Action Input: {json.dumps({
-                "resume": resume,
-                "jd": jd,
-                "company": company,
-                "chat_history": recent_history,
-                "persona": persona_info 
-            }, ensure_ascii=False)}
+        # 입력: '{content}'
 
-            Action: generate_question_acting
-            Action Input: '{{reasoning}}'
+        # 가능한 처리 흐름:
+        # 1. Action: classify_input
+        #     Action Input: {
+        #         json.dumps({
+        #             "request": {
+        #                 "type": type,
+        #                 "content": content,
+        #                 "related_chatting_id": related_chatting_id,
+        #             },
+        #             "chat_history": recent_history,
+        #         }, ensure_ascii=False)
+        #     }
+        #     Observation: 입력 유형을 분류함
 
-        3. 분류된 유형이 'answer' 또는 'followup'이면:
-            Action: evaluate_answer
-            Action Input: {json.dumps({
-                "answer": content,
-                "question": last_question,
-                "resume": resume,
-                "jd": jd,
-                "company": company,
-                "persona": persona_info 
-            }, default=str, ensure_ascii=False)}
-            Observation: 평가 결과
-            
-            Thought: 만약 평가 결과 평균 점수가 5점 이하 또는 답변이 구체적이지 않거나 추가 질문이 필요하다면, 다음과 같이 진행하세요.
-                - Action: generate_followup_reasoning
-                    Action Input: {{ "input_text": "{content}", "chat_history": "{recent_history}" }}
-                - Action: generate_followup_acting
-                    Action Input: {{ "input_text": "{content}", "reasoning": reasoning }}
-            Thought: 충분한 답변이라면 꼬리질문은 생략하세요.
+        # 2. 분류된 유형이 'question'이면:
+        #     Action: generate_question_reasoning
+        #     Action Input: {json.dumps({
+        #         "resume": resume,
+        #         "jd": jd,
+        #         "company": company,
+        #         "chat_history": recent_history,
+        #         "persona": persona_info
+        #     }, ensure_ascii=False)}
 
-        4. 분류된 유형이 'modelAnswer'이면:
-            Action: generate_model_answer
-            Action Input: {json.dumps({
-                "question": last_question.content if last_question else "",
-                "resume": resume,
-                "jd": jd,
-                "company": company,
-                "chat_history": recent_history,
-                "persona": persona_info
-            }, ensure_ascii=False)}
-            Observation: 모범 답변 생성됨
+        #     Action: generate_question_acting
+        #     Action Input: '{{reasoning}}'
 
-            Thought: 생성된 모범 답변을 reranking을 통해 최적화하겠습니다.
-            Action: generate_reranked_answers
-            Action Input: {json.dumps({
-                "original_answer": "{{model_answer}}",
-                "question": last_question.content if last_question else "",
-                "prev_question_answer_pairs": [],
-            }, ensure_ascii=False)}
-            Observation: reranking된 답변들 생성됨
+        # 3. 분류된 유형이 'answer' 또는 'followup'이면:
+        #     Action: evaluate_answer
+        #     Action Input: {json.dumps({
+        #         "answer": content,
+        #         "question": last_question,
+        #         "resume": resume,
+        #         "jd": jd,
+        #         "company": company,
+        #         "persona": persona_info
+        #     }, default=str, ensure_ascii=False)}
+        #     Observation: 평가 결과
 
-            Thought: reranking된 답변들 중 가장 좋은 답변을 선택하겠습니다.
-            Action: compare_answers
-            Action Input: {json.dumps({
-                "original_answer": "{{model_answer}}",
-                "reranked_answers": "{{reranked_answers}}"
-            }, ensure_ascii=False)}
-            Observation: 최적의 답변 선택됨
+        #     Thought: 만약 평가 결과 평균 점수가 5점 이하 또는 답변이 구체적이지 않거나 추가 질문이 필요하다면, 다음과 같이 진행하세요.
+        #         - Action: generate_followup_reasoning
+        #             Action Input: {{ "input_text": "{content}", "chat_history": "{recent_history}" }}
+        #         - Action: generate_followup_acting
+        #             Action Input: {{ "input_text": "{content}", "reasoning": reasoning }}
+        #     Thought: 충분한 답변이라면 꼬리질문은 생략하세요.
 
-        5. 분류된 유형이 'other'이면:
-            Action: translate_to_korean
-            Action Input: '{content}'
-            
-            Action: generate_acting
-            Action Input: '{{reasoning}}'
+        # 4. 분류된 유형이 'modelAnswer'이면:
+        #     Action: generate_model_answer
+        #     Action Input: {json.dumps({
+        #         "question": last_question.content if last_question else "",
+        #         "resume": resume,
+        #         "jd": jd,
+        #         "company": company,
+        #         "chat_history": recent_history,
+        #         "persona": persona_info
+        #     }, ensure_ascii=False)}
+        #     Observation: 모범 답변 생성됨
 
-        Thought: 입력을 기반으로 어떤 유형인지 분류했습니다.
-            다음으로 적절한 tool을 사용해 응답을 생성하겠습니다.
-        Final Answer:
-            최종 결과는 문자열로 반환되고, 불필요한 내용은 제거하세요. 결과물은 한가지 내용이어야 합니다.
-            예시 :  {{질문 내용}} or {{답변 내용}} or {{꼬리질문 내용}} or {{번역 내용}} or {{모범 답변 내용}}
-        """
-        response = agent_executor.invoke({"input": input_text})
+        #     Thought: 생성된 모범 답변을 reranking을 통해 최적화하겠습니다.
+        #     Action: generate_reranked_answers
+        #     Action Input: {json.dumps({
+        #         "original_answer": "{{model_answer}}",
+        #         "question": last_question.content if last_question else "",
+        #         "prev_question_answer_pairs": [],
+        #     }, ensure_ascii=False)}
+        #     Observation: reranking된 답변들 생성됨
 
+        #     Thought: reranking된 답변들 중 가장 좋은 답변을 선택하겠습니다.
+        #     Action: compare_answers
+        #     Action Input: {json.dumps({
+        #         "original_answer": "{{model_answer}}",
+        #         "reranked_answers": "{{reranked_answers}}"
+        #     }, ensure_ascii=False)}
+        #     Observation: 최적의 답변 선택됨
+
+        # 5. 분류된 유형이 'other'이면:
+        #     Action: translate_to_korean
+        #     Action Input: '{content}'
+
+        #     Action: generate_acting
+        #     Action Input: '{{reasoning}}'
+
+        # Thought: 입력을 기반으로 어떤 유형인지 분류했습니다.
+        #     다음으로 적절한 tool을 사용해 응답을 생성하겠습니다.
+        # Final Answer:
+        #     최종 결과는 문자열로 반환되고, 불필요한 내용은 제거하세요. 결과물은 한가지 내용이어야 합니다.
+        #     예시 :  {{질문 내용}} or {{답변 내용}} or {{꼬리질문 내용}} or {{번역 내용}} or {{모범 답변 내용}}
+        # """
+        # response = agent_executor.invoke({"input": input_text})
+        response = agent.run(content)
         # modelAnswer 타입일 때만 reranking 수행
         if type == "modelAnswer":
             original_answer = response["output"]

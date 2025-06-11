@@ -84,8 +84,7 @@ def classify_input(state: AgentState) -> AgentState:
     resume = state.get("resume", "")
     jd = state.get("jd", "")
     company = state.get("company", "")
-    chat_history = state.get("chat_history", "")
-    last_question = state.get("last_question", "")
+    # last_question = state.get("last_question", "")
     # 분류 결과 추출 (마지막 메시지의 content가 분류값)
     classification = result["messages"][-1].content.strip()
 
