@@ -80,24 +80,34 @@ def classify_input(state: AgentState) -> AgentState:
       Command: router node로 이동하기 위한 명령을 반환합니다.
     """
 
-    result = classify_agent.invoke({input: state["query"]})
-    resume = state.get("resume", "")
-    jd = state.get("jd", "")
-    company = state.get("company", "")
-    # last_question = state.get("last_question", "")
-    # 분류 결과 추출 (마지막 메시지의 content가 분류값)
-    classification = result["messages"][-1].content.strip()
+    query = state.get("query", "")
+    print("classify_input > query >", query)
+    
+    classify_prompt = PromptTemplate.from_template("""
+주어진 query와 chat_history를 바탕으로 입력이이 어떤 유형인지 판단하세요: 
+- 면접질문 요청 (question)
+- 꼬리질문 요청 (followup)
+- 모범답변 요청 (modelAnswer)
+- 답변 (answer)
+- 그 외 면접과 관련 없는 텍스트 (other)
 
+
+사용자 입력:
+{query}
+
+형식: question, followup, modelAnswer, answer, other 중 하나로만 답하세요.
+""")
+    
+    router_chain = classify_prompt | llm | StrOutputParser() 
+    result = router_chain.invoke({'query': query})
+    
+    print("classify_input", result)
+    # # 분류 결과 추출 (마지막 메시지의 content가 분류값)
+    # classification = result['messages'][-1].content.strip()
+    
     # 결과 메시지를 업데이트하고 router node로 이동합니다.
-    return {
-        "input_type": classification,
-        "resume": resume,
-        "jd": jd,
-        "company": company,
-        "chat_history": chat_history.get_all_history_as_string(),
-        "last_question": chat_history.get_question_by_id(
-            chat_history.get_latest_question_id()
-        ),
+    return { 
+        "input_type": result
     }
 
 
@@ -375,7 +385,7 @@ class GraphAgent:
         graph_builder.add_conditional_edges(
             "router",
             conditional_router,
-            {generation: "generation", followup: "followup"},
+            {"generation": "generation", "followup": "followup"},
         )
 
         self.graph = graph_builder.compile()
