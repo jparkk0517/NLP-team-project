@@ -216,12 +216,29 @@ async def get_chat_history():
 RequestType = Literal["question", "followup", "modelAnswer", "answer", "other"]
 
 
+@app.get("/assessment")
+async def get_assessment():
+    """
+    interface AssessmentResultDTO {
+      logicScore: number;
+      jobFitScore: number;
+      coreValueFitScore: number;
+      communicationScore: number;
+      averageScore: number;
+    }"""
+    return {
+        "logicScore": 0,
+        "jobFitScore": 0,
+        "coreValueFitScore": 0,
+        "communicationScore": 0,
+        "averageScore": 0,
+    }
+
+
 class RequestInput(BaseModel):
     type: Optional[RequestType] = None
     content: str
     related_chatting_id: Optional[str] = None
-
-
 
 
 @app.post("/")
@@ -248,7 +265,7 @@ async def analyze_input(request: RequestInput):
             persona_info = persona_service.get_persona_str_by_id(persona_id)
 
         response = agent.run(content)
-        
+
         # modelAnswer 타입일 때만 reranking 수행
         if type == "modelAnswer":
             original_answer = response.get("answer", "")
@@ -335,8 +352,6 @@ async def delete_persona(persona_id: str):
         raise HTTPException(status_code=404, detail="Persona not found.")
     persona_service.delete_persona(persona_id)
     return None
-
-
 
 
 app.mount("/", StaticFiles(directory=dist_path, html=True), name="frontend")
