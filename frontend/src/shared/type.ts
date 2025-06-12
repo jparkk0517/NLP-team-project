@@ -32,6 +32,7 @@ export interface AssessmentResultDTO {
   coreValueFitScore: number;
   communicationScore: number;
   averageScore: number;
+  overallEvaluation: string;
 }
 
 export interface PersonaDTO {

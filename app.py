@@ -225,13 +225,17 @@ async def get_assessment():
       coreValueFitScore: number;
       communicationScore: number;
       averageScore: number;
+      overallEvaluation: string;
     }"""
     return {
-        "logicScore": 0,
-        "jobFitScore": 0,
-        "coreValueFitScore": 0,
-        "communicationScore": 0,
-        "averageScore": 0,
+        "logicScore": 4,
+        "jobFitScore": 6,
+        "coreValueFitScore": 5,
+        "communicationScore": 5,
+        "averageScore": 5,
+        "overallEvaluation": """이 지원자는 해당 면접에 적합하지 않습니다. 논리성에서 낮은 점수를 받았고, 직무적합도는 높은 점수를 받았습니다. 하지만 핵심가치와 커뮤니케이션에서는 중간 점수를 받았습니다.
+        결과적으로 해당 지원자는 면접결과 애매한 점수를 기록하여 합격하기에 적합하지 않습니다.
+        """,
     }
 
 

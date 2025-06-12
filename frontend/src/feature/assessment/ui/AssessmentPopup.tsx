@@ -3,7 +3,6 @@ import { useAssessment } from '../hook/useAssessment';
 
 const AssessmentPopup = () => {
   const { data, isFetching } = useAssessment();
-  console.log(data);
   return (
     <div className='flex flex-col gap-2 p-4'>
       <h2 className='text-2xl font-bold'>평가 결과</h2>
@@ -11,6 +10,7 @@ const AssessmentPopup = () => {
         <LoadingSpinner />
       ) : (
         <ul>
+          <li>종합 평가: {data?.overallEvaluation}</li>
           <li>논리성: {data?.logicScore}</li>
           <li>직무적합성: {data?.jobFitScore}</li>
           <li>핵심가치 부합성: {data?.coreValueFitScore}</li>
