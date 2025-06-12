@@ -38,6 +38,8 @@ const Content = ({
           p-2 text-gray-500 rounded-md bg-gray-200 max-w-[70%] overflow-scroll
           ${textAlign === 'right' ? 'flex-row-reverse' : ''}
           scrollbar-hide
+          whitespace-pre-line
+          break-words
         `}>
         {content}
       </div>
