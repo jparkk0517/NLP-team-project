@@ -35,7 +35,7 @@ const Content = ({
     <div className='flex flex-col justify-end max-w-[80%]'>
       <div
         className={`
-          p-2 text-gray-500 rounded-md bg-gray-200 max-w-[70%] max-h-[300px] overflow-scroll
+          p-2 text-gray-500 rounded-md bg-gray-200 max-w-[70%] overflow-scroll
           ${textAlign === 'right' ? 'flex-row-reverse' : ''}
           scrollbar-hide
         `}>
