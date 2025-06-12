@@ -11,6 +11,7 @@ from .chains.interview_chain import (
     agent_executor,
     classify_input,
 )
+from .chains.interview_graph import GraphAgent
 from .persona.Persona import Persona, PersonaType
 from .persona.PersonaService import PersonaService, PersonaInput
 
@@ -29,4 +30,5 @@ __all__ = [
     "Persona",
     "PersonaType",
     "PersonaInput",
+    "GraphAgent",
 ]
