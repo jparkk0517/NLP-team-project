@@ -183,6 +183,15 @@ def get_company_info():
     return company_info
 
 
+def search_query_by_vector(query: str) -> str:
+    if vectorstore is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Company documents not uploaded. Please upload docs first.",
+        )
+    retrieved = vectorstore.similarity_search(query, k=3)
+
+
 @app.get("/chatHistory")
 async def get_chat_history():
     if not chat_history.history:
