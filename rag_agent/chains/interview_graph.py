@@ -29,7 +29,7 @@ from rag_agent import ChatHistory
 
 
 class Route(BaseModel):
-    target: Literal["question", "model_answer", "followup", "llm"] = Field(
+    target: Literal["question", "modelAnswer", "followup", "llm"] = Field(
         description="The target for the query to answer"
     )
 
@@ -125,17 +125,17 @@ def router(state: AgentState) -> AgentState:
         state (AgentState): 현재 에이전트의 state를 나타내는 객체입니다.
 
     Returns:
-        Literal['question', 'model_answer', 'followup', 'llm']: 쿼리에 따라 선택된 경로를 반환합니다.
+        Literal['question', 'modelAnswer', 'followup', 'llm']: 쿼리에 따라 선택된 경로를 반환합니다.
     """
 
     query = state["query"]
     router_system_prompt = """
-You are an expert at routing a user's input type to 'question', 'model_answer', 'followup' or 'llm'.
+You are an expert at routing a user's input type to 'question', 'modelAnswer', 'followup' or 'llm'.
 If the user input is 'question' route to 'question'.
-else if the user input is 'model_answer' route to 'model_answer',
+else if the user input is 'modelAnswer' route to 'modelAnswer',
 else if the user input is 'followup' route to 'followup',
 
-if you think the input is not related to either 'question', 'model_answer' or 'followup';
+if you think the input is not related to either 'question', 'modelAnswer' or 'followup';
 you can route it to 'llm'."""
 
     router_prompt = ChatPromptTemplate.from_messages(
@@ -307,7 +307,7 @@ JD:
         }
 
 
-def model_answer(state: AgentState) -> AgentState:
+def modelAnswer(state: AgentState) -> AgentState:
     """
     STAR 기법 등 구조화된 최적의 모범 답변을 생성하는 LangGraph용 노드 함수.
     이력서, JD, 회사정보, 이전 Q&A, 질문, 페르소나 등 context를 모두 반영.
@@ -375,35 +375,35 @@ def model_answer(state: AgentState) -> AgentState:
 
 답변은 한글로 생성해야 한다.
 
-""")
+"""
+        )
 
         # 3. LLM 체인 실행
         chain = prompt | llm | StrOutputParser()
-        result = chain.invoke({
-            "resume": resume,
-            "jd": jd,
-            "company_infos": company_infos,
-            "prev_question_answer_pairs": prev_question_answer_pairs,
-            "question": question,
-            "persona": persona,
-            "chat_history": chat_history,
-        })
+        result = chain.invoke(
+            {
+                "resume": resume,
+                "jd": jd,
+                "company_infos": company_infos,
+                "prev_question_answer_pairs": prev_question_answer_pairs,
+                "question": question,
+                "persona": persona,
+                "chat_history": chat_history,
+            }
+        )
 
         # 4. 결과를 state에 업데이트
-        return {
-            **state,
-            "answer": result
-        }
+        return {**state, "answer": result}
 
     except Exception as e:
         return {
             **state,
-            "error": f"model_answer_node에서 오류 발생: {str(e)}",
+            "error": f"modelAnswer_node에서 오류 발생: {str(e)}",
             "status": "error",
-            "messages": state.get("messages", []) + [
-                {"role": "system", "content": f"오류: {str(e)}"}
-            ]
+            "messages": state.get("messages", [])
+            + [{"role": "system", "content": f"오류: {str(e)}"}],
         }
+
 
 def call_llm(state: AgentState) -> AgentState:
     """
@@ -441,7 +441,7 @@ def conditional_router(state: AgentState) -> str:
         "question": "generation",
         "answer": "generation",
         "followup": "followup",
-        "model_answer": "model_answer",
+        "modelAnswer": "modelAnswer",
         "interview_answer": "EvaluateFollowup",
         "other": "llm",
     }
@@ -468,7 +468,7 @@ class GraphAgent:
         graph_builder.add_node("generation", generation)
         graph_builder.add_node("followup", followup)
         graph_builder.add_node("llm", call_llm)
-        graph_builder.add_node('model_answer', model_answer)
+        graph_builder.add_node("modelAnswer", modelAnswer)
 
         # 시작점에서 병렬 실행
         graph_builder.add_edge(START, "classify_input")
@@ -482,12 +482,17 @@ class GraphAgent:
         graph_builder.add_edge("generation", END)
         graph_builder.add_edge("followup", END)
         graph_builder.add_edge("llm", END)
-        graph_builder.add_edge('model_answer', END)
+        graph_builder.add_edge("modelAnswer", END)
 
         graph_builder.add_conditional_edges(
             "router",
             conditional_router,
-            {"generation": "generation", "followup": "followup", "llm": "llm", "model_answer": "model_answer"},
+            {
+                "generation": "generation",
+                "followup": "followup",
+                "llm": "llm",
+                "modelAnswer": "modelAnswer",
+            },
         )
 
         self.graph = graph_builder.compile()
