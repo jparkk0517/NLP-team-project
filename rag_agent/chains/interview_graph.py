@@ -409,7 +409,7 @@ def evaluate(state: AgentState) -> AgentState:
 
         # 평가 실행
         parser = JsonOutputParser()
-        chain = assessment_prompt | llm | parser
+        chain = assessment_prompt | llm | StrOutputParser()
         result = chain.invoke({
             "resume": resume,
             "jd": jd,
