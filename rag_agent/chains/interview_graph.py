@@ -29,7 +29,7 @@ from rag_agent import ChatHistory
 
 
 class Route(BaseModel):
-    target: Literal["question", "modelAnswer", "followup", "llm"] = Field(
+    target: Literal["question", "evaluate", "modelAnswer", "followup", "other"] = Field(
         description="The target for the query to answer"
     )
 
@@ -67,14 +67,16 @@ def classify_input(state: AgentState) -> AgentState:
     """
 
     query = state.get("query", "")
+    chat_history = state.get("chat_history", "")
     print("classify_input > query >", query)
 
     classify_prompt = PromptTemplate.from_template(
         """
-주어진 query와 chat_history를 바탕으로 입력이 어떤 유형인지 판단하세요: 
+주어진 입력과 대화 내역을 바탕으로 입력이 어떤 유형인지 판단하세요: 
 - 면접질문 요청 (question)
 - 꼬리질문 요청 (followup)
 - 모범답변 요청 (modelAnswer)
+- 지원자의 면접 답변 (response)
 - 평가 요청 (evaluate)
 - 그 외 면접과 관련 없는 텍스트 (other)
 
@@ -82,11 +84,14 @@ def classify_input(state: AgentState) -> AgentState:
 사용자 입력:
 {query}
 
-형식: question, followup, modelAnswer, answer, other 중 하나로만 답하세요."""
+대화 내역:
+{chat_history}
+
+형식: question, followup, modelAnswer, response, evaluate, other 중 하나로만 답하세요."""
     )
 
     router_chain = classify_prompt | llm | StrOutputParser()
-    result = router_chain.invoke({"query": query})
+    result = router_chain.invoke({"query": query, "chat_history": chat_history})
 
     print("classify_input > result >", result)
 
@@ -132,19 +137,31 @@ def router(state: AgentState) -> AgentState:
         state (AgentState): 현재 에이전트의 state를 나타내는 객체입니다.
 
     Returns:
-        Literal['question', 'modelAnswer', 'followup', 'evaluate', 'llm']: 쿼리에 따라 선택된 경로를 반환합니다.
+        Literal["question", "evaluate", "modelAnswer", "followup", "other"]: 쿼리에 따라 선택된 경로를 반환합니다.
     """
 
-    query = state["query"]
+    query = state["input_type"]
     router_system_prompt = """
-You are an expert at routing a user's input type to 'question', 'modelAnswer', 'evaluate', 'followup' or 'llm'.
-If the user input is 'question' route to 'question'.
-else if the user input is 'modelAnswer' route to 'modelAnswer',
-elf if the user input is 'evaluate' route to 'evaluate'.
-else if the user input is 'followup' route to 'followup',
+You are an expert at routing a user's input type to one of the following:
+- 'question'
+- 'modelAnswer'
+- 'evaluate'
+- 'followup'
+- 'other'
 
-if you think the input is not related to either 'question', 'modelAnswer', 'evaluate', or 'followup';
-you can route it to 'llm'."""
+Instructions:
+- If the input is exactly 'question', return 'question'.
+- If the input is exactly 'response' or exactly 'evaluate', return 'evaluate'.
+- If the input is exactly 'followup', return 'followup'.
+- If the input is exactly 'modelAnswer', return 'modelAnswer'.
+- Otherwise, return 'other'.
+
+Note:
+- 'response' means a user's response to an interview question.
+- 'evaluate' refers to evaluating that answer.
+Both should be routed to 'evaluate'.
+
+Only return one of: 'question', 'evaluate', 'followup', 'modelAnswer', 'other'."""
 
     router_prompt = ChatPromptTemplate.from_messages(
         [("system", router_system_prompt), ("user", "{query}")]
@@ -210,9 +227,10 @@ JD:
 - 반드시 2단계에서 생성된 질문(acting 결과)만 출력하세요.
 - 1단계 Reasoning(분석) 내용은 절대 출력하지 마세요.
 - 질문 이외의 설명, 분석, 안내 문구도 출력하지 마세요.
+- "[질문]"이나 "면접 질문:" 같은 태그는 붙이지 마세요. 질문 문장만 출력하세요.
 
 출력 예시:
-[생성된 면접 질문]
+복잡한 비즈니스 문제를 기술로 해결한 경험에 대해 말씀해 주시고, 그 과정에서 어떤 기술적 선택을 하셨는지, 결과에 어떤 영향을 미쳤는지 구체적으로 설명해 주시겠습니까?
 """
         )
 
@@ -292,6 +310,7 @@ JD:
 - 반드시 2단계에서 생성된 질문(acting 결과)만 출력하세요.
 - 1단계 Reasoning(분석) 내용은 절대 출력하지 마세요.
 - 질문 이외의 설명, 분석, 안내 문구도 출력하지 마세요.
+- "[질문]"이나 "면접 질문:" 같은 태그는 붙이지 마세요. 질문 문장만 출력하세요.
 
 출력 형식:
 [생성된 꼬리 면접 질문]
@@ -390,7 +409,7 @@ def evaluate(state: AgentState) -> AgentState:
 
         # 평가 실행
         parser = JsonOutputParser()
-        chain = assessment_prompt | llm | parser
+        chain = assessment_prompt | llm | StrOutputParser()
         result = chain.invoke({
             "resume": resume,
             "jd": jd,
@@ -555,12 +574,11 @@ def conditional_router(state: AgentState) -> str:
 
     # 그래프 노드 이름과 매핑
     route_mapping = {
-        "generation": "generation",
         "question": "generation",
-        "answer": "evaluate",
+        "response": "evaluate",
+        "evaluate": "evaluate",
         "followup": "followup",
         "modelAnswer": "modelAnswer",
-        "interview_answer": "EvaluateFollowup",
         "other": "llm",
     }
 
@@ -585,6 +603,7 @@ class GraphAgent:
         graph_builder.add_node("router", router)
         graph_builder.add_node("generation", generation)
         graph_builder.add_node("followup", followup)
+        graph_builder.add_node("evaluate", evaluate)
         graph_builder.add_node("llm", call_llm)
         graph_builder.add_node("modelAnswer", modelAnswer)
 
@@ -599,6 +618,7 @@ class GraphAgent:
         # 생성 노드에서 종료
         graph_builder.add_edge("generation", END)
         graph_builder.add_edge("followup", END)
+        graph_builder.add_edge("evaluate", END)
         graph_builder.add_edge("llm", END)
         graph_builder.add_edge("modelAnswer", END)
 
@@ -609,6 +629,7 @@ class GraphAgent:
                 "generation": "generation",
                 "followup": "followup",
                 "llm": "llm",
+                "evaluate": "evaluate",
                 "modelAnswer": "modelAnswer",
             },
         )
