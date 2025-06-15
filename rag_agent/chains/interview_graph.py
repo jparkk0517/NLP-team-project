@@ -324,83 +324,91 @@ JD:
 
 def evaluate(state: AgentState) -> AgentState:
     """
-    사용자 입력과, 이전 대화내용을 바탕으로 페르소나별 평가를 생성, 합산하고고
-    최종 평가 결과를 전달합니다.
-
-    Args:
-      state (MessageState): 현재 메시지 상태를 나타내는 객체입니다.
-
-    Returns:
-      Command: 평가 결과를 반환합니다.
+    지원자의 답변과 대화 이력, 페르소나 정보를 바탕으로
+    각 페르소나별 평가를 생성하고, 최종 평가 결과를 반환합니다.
     """
-    
-    class AssessmentResult(BaseModel):
-        logicScore: int
-        jobFitScore: int
-        coreValueFitScore: int
-        communicationScore: int
-        averageScore: float
-        overallEvaluation: str
-
-    parser = JsonOutputParser(pydantic_object=AssessmentResult)
-    
-    assessment_prompt = PromptTemplate(
-        input_variables=["resume", "jd", "company", "question", "answer", "persona"],
-        template="""
-        역할: 주어진 페르소나 리스트의 면접관 개별적으로 지원자의 답변을 평가하고, 그 결과를 합산합니다.
-
-        직무 설명:
-        {jd}
-
-        이력서:
-        {resume}
-
-        회사 정보:
-        {company}
-
-        면접 내용: 
-        {chat_history}
-
-        면접관 리스트 정보(개별 평가):
-        {persona}
-        
-        [1단계]
-        면접관 페르소나별로 다음 4개 항목을 0-10점으로 평가하세요:
-        1. 논리성 (logicScore): 답변의 논리적 일관성과 구조
-        2. 직무적합성 (jobFitScore): JD 요구사항과의 부합도
-        3. 핵심가치 부합성 (coreValueFitScore): 회사 가치와의 일치도
-        4. 커뮤니케이션 능력 (communicationScore): 의사소통 명확성
-        
-        [2단계]
-        각 항목별 면접관 점수를 평균 내고, 최종 코멘트를 200자 이내로 작성하세요:
-        1. 논리성 (logicScore): 답변의 논리적 일관성과 구조
-        2. 직무적합성 (jobFitScore): JD 요구사항과의 부합도
-        3. 핵심가치 부합성 (coreValueFitScore): 회사 가치와의 일치도
-        4. 커뮤니케이션 능력 (communicationScore): 의사소통 명확성
-        5. 종합 평가 코멘트 (overallEvaluation): 종합평가 코멘트 (200자 이내)
-
-        {format_instructions}
-        """,
-        partial_variables={"format_instructions": parser.get_format_instructions()}
-    )
-
     try:
+        resume = state.get("resume", "")
+        jd = state.get("jd", "")
+        company = state.get("company", "")
+        chat_history = state.get("chat_history", "")
+        persona_list = state.get("persona_list", "")
+        last_question = state.get("last_question", "")
+        answer = state.get("query", "")
+
+        # 필수 정보 체크
+        if not all([resume, jd, company, chat_history, persona_list, last_question, answer]):
+            return {
+                "error": "평가에 필요한 정보가 부족합니다.",
+                "status": "error",
+                "messages": state.get("messages", []) + [
+                    {"role": "system", "content": "평가에 필요한 정보가 부족합니다."}
+                ],
+            }
+
+        # 평가 프롬프트
+        assessment_prompt = PromptTemplate(
+            input_variables=["resume", "jd", "company", "question", "answer", "persona", "chat_history"],
+            template="""
+역할: 주어진 페르소나 리스트의 면접관들이 지원자의 답변을 평가하고, 그 결과를 합산합니다.
+
+직무 설명:
+{jd}
+
+이력서:
+{resume}
+
+회사 정보:
+{company}
+
+면접 질문:
+{question}
+
+지원자 답변:
+{answer}
+
+대화 이력:
+{chat_history}
+
+면접관 리스트 정보(개별 평가):
+{persona}
+
+[1단계]
+각 페르소나별로 다음 4개 항목을 0~10점으로 평가하세요:
+1. 논리성 (logicScore)
+2. 직무적합성 (jobFitScore)
+3. 핵심가치 부합성 (coreValueFitScore)
+4. 커뮤니케이션 능력 (communicationScore)
+
+[2단계]
+각 항목별 점수를 평균내고, 최종 코멘트를 200자 이내로 작성하세요.
+
+[실제 출력]
+실제 출력에서는 자연스럽게 면접관이 답변하는 형식으로 출력하세요. 점수는 공개하지 마세요.
+"""
+        )
+
+        # 평가 실행
+        parser = JsonOutputParser()
         chain = assessment_prompt | llm | parser
-        
         result = chain.invoke({
-            "jd": state.get("jd", ""),
-            "resume": state.get("resume", ""),
-            "company": state.get("company", ""),
-            "chat_history": state.get("chat_history", ""),
-            "persona": state.get("persona_list", ""),
+            "resume": resume,
+            "jd": jd,
+            "company": company,
+            "question": last_question,
+            "answer": answer,
+            "persona": persona_list,
+            "chat_history": chat_history,
         })
         return {"answer": result}
+
     except Exception as e:
         return {
             "error": f"Evaluate 노드에서 오류 발생: {str(e)}",
             "status": "error",
-            "messages": state.get("messages", [])
-            + [{"role": "system", "content": f"오류: {str(e)}"}],
+            "messages": state.get("messages", []) + [
+                {"role": "system", "content": f"오류: {str(e)}"}
+            ],
         }
     
 
@@ -549,7 +557,7 @@ def conditional_router(state: AgentState) -> str:
     route_mapping = {
         "generation": "generation",
         "question": "generation",
-        "answer": "generation",
+        "answer": "evaluate",
         "followup": "followup",
         "modelAnswer": "modelAnswer",
         "interview_answer": "EvaluateFollowup",
