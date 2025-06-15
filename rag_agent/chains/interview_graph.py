@@ -29,7 +29,7 @@ from rag_agent import ChatHistory
 
 
 class Route(BaseModel):
-    target: Literal["question", "modelAnswer", "followup", "llm"] = Field(
+    target: Literal["question", "evaluate", "modelAnswer", "followup", "other"] = Field(
         description="The target for the query to answer"
     )
 
@@ -67,14 +67,16 @@ def classify_input(state: AgentState) -> AgentState:
     """
 
     query = state.get("query", "")
+    chat_history = state.get("chat_history", "")
     print("classify_input > query >", query)
 
     classify_prompt = PromptTemplate.from_template(
         """
-주어진 query와 chat_history를 바탕으로 입력이 어떤 유형인지 판단하세요: 
+주어진 입력과 대화 내역을 바탕으로 입력이 어떤 유형인지 판단하세요: 
 - 면접질문 요청 (question)
 - 꼬리질문 요청 (followup)
 - 모범답변 요청 (modelAnswer)
+- 지원자의 면접 답변 (response)
 - 평가 요청 (evaluate)
 - 그 외 면접과 관련 없는 텍스트 (other)
 
@@ -82,11 +84,14 @@ def classify_input(state: AgentState) -> AgentState:
 사용자 입력:
 {query}
 
-형식: question, followup, modelAnswer, answer, other 중 하나로만 답하세요."""
+대화 내역:
+{chat_history}
+
+형식: question, followup, modelAnswer, response, evaluate, other 중 하나로만 답하세요."""
     )
 
     router_chain = classify_prompt | llm | StrOutputParser()
-    result = router_chain.invoke({"query": query})
+    result = router_chain.invoke({"query": query, "chat_history": chat_history})
 
     print("classify_input > result >", result)
 
@@ -132,19 +137,31 @@ def router(state: AgentState) -> AgentState:
         state (AgentState): 현재 에이전트의 state를 나타내는 객체입니다.
 
     Returns:
-        Literal['question', 'modelAnswer', 'followup', 'evaluate', 'llm']: 쿼리에 따라 선택된 경로를 반환합니다.
+        Literal["question", "evaluate", "modelAnswer", "followup", "other"]: 쿼리에 따라 선택된 경로를 반환합니다.
     """
 
-    query = state["query"]
+    query = state["input_type"]
     router_system_prompt = """
-You are an expert at routing a user's input type to 'question', 'modelAnswer', 'evaluate', 'followup' or 'llm'.
-If the user input is 'question' route to 'question'.
-else if the user input is 'modelAnswer' route to 'modelAnswer',
-elf if the user input is 'evaluate' route to 'evaluate'.
-else if the user input is 'followup' route to 'followup',
+You are an expert at routing a user's input type to one of the following:
+- 'question'
+- 'modelAnswer'
+- 'evaluate'
+- 'followup'
+- 'other'
 
-if you think the input is not related to either 'question', 'modelAnswer', 'evaluate', or 'followup';
-you can route it to 'llm'."""
+Instructions:
+- If the input is exactly 'question', return 'question'.
+- If the input is exactly 'response' or exactly 'evaluate', return 'evaluate'.
+- If the input is exactly 'followup', return 'followup'.
+- If the input is exactly 'modelAnswer', return 'modelAnswer'.
+- Otherwise, return 'other'.
+
+Note:
+- 'response' means a user's response to an interview question.
+- 'evaluate' refers to evaluating that answer.
+Both should be routed to 'evaluate'.
+
+Only return one of: 'question', 'evaluate', 'followup', 'modelAnswer', 'other'."""
 
     router_prompt = ChatPromptTemplate.from_messages(
         [("system", router_system_prompt), ("user", "{query}")]
@@ -210,9 +227,10 @@ JD:
 - 반드시 2단계에서 생성된 질문(acting 결과)만 출력하세요.
 - 1단계 Reasoning(분석) 내용은 절대 출력하지 마세요.
 - 질문 이외의 설명, 분석, 안내 문구도 출력하지 마세요.
+- "[질문]"이나 "면접 질문:" 같은 태그는 붙이지 마세요. 질문 문장만 출력하세요.
 
 출력 예시:
-[생성된 면접 질문]
+복잡한 비즈니스 문제를 기술로 해결한 경험에 대해 말씀해 주시고, 그 과정에서 어떤 기술적 선택을 하셨는지, 결과에 어떤 영향을 미쳤는지 구체적으로 설명해 주시겠습니까?
 """
         )
 
@@ -292,6 +310,7 @@ JD:
 - 반드시 2단계에서 생성된 질문(acting 결과)만 출력하세요.
 - 1단계 Reasoning(분석) 내용은 절대 출력하지 마세요.
 - 질문 이외의 설명, 분석, 안내 문구도 출력하지 마세요.
+- "[질문]"이나 "면접 질문:" 같은 태그는 붙이지 마세요. 질문 문장만 출력하세요.
 
 출력 형식:
 [생성된 꼬리 면접 질문]
@@ -324,83 +343,91 @@ JD:
 
 def evaluate(state: AgentState) -> AgentState:
     """
-    사용자 입력과, 이전 대화내용을 바탕으로 페르소나별 평가를 생성, 합산하고고
-    최종 평가 결과를 전달합니다.
-
-    Args:
-      state (MessageState): 현재 메시지 상태를 나타내는 객체입니다.
-
-    Returns:
-      Command: 평가 결과를 반환합니다.
+    지원자의 답변과 대화 이력, 페르소나 정보를 바탕으로
+    각 페르소나별 평가를 생성하고, 최종 평가 결과를 반환합니다.
     """
-    
-    class AssessmentResult(BaseModel):
-        logicScore: int
-        jobFitScore: int
-        coreValueFitScore: int
-        communicationScore: int
-        averageScore: float
-        overallEvaluation: str
-
-    parser = JsonOutputParser(pydantic_object=AssessmentResult)
-    
-    assessment_prompt = PromptTemplate(
-        input_variables=["resume", "jd", "company", "question", "answer", "persona"],
-        template="""
-        역할: 주어진 페르소나 리스트의 면접관 개별적으로 지원자의 답변을 평가하고, 그 결과를 합산합니다.
-
-        직무 설명:
-        {jd}
-
-        이력서:
-        {resume}
-
-        회사 정보:
-        {company}
-
-        면접 내용: 
-        {chat_history}
-
-        면접관 리스트 정보(개별 평가):
-        {persona}
-        
-        [1단계]
-        면접관 페르소나별로 다음 4개 항목을 0-10점으로 평가하세요:
-        1. 논리성 (logicScore): 답변의 논리적 일관성과 구조
-        2. 직무적합성 (jobFitScore): JD 요구사항과의 부합도
-        3. 핵심가치 부합성 (coreValueFitScore): 회사 가치와의 일치도
-        4. 커뮤니케이션 능력 (communicationScore): 의사소통 명확성
-        
-        [2단계]
-        각 항목별 면접관 점수를 평균 내고, 최종 코멘트를 200자 이내로 작성하세요:
-        1. 논리성 (logicScore): 답변의 논리적 일관성과 구조
-        2. 직무적합성 (jobFitScore): JD 요구사항과의 부합도
-        3. 핵심가치 부합성 (coreValueFitScore): 회사 가치와의 일치도
-        4. 커뮤니케이션 능력 (communicationScore): 의사소통 명확성
-        5. 종합 평가 코멘트 (overallEvaluation): 종합평가 코멘트 (200자 이내)
-
-        {format_instructions}
-        """,
-        partial_variables={"format_instructions": parser.get_format_instructions()}
-    )
-
     try:
+        resume = state.get("resume", "")
+        jd = state.get("jd", "")
+        company = state.get("company", "")
+        chat_history = state.get("chat_history", "")
+        persona_list = state.get("persona_list", "")
+        last_question = state.get("last_question", "")
+        answer = state.get("query", "")
+
+        # 필수 정보 체크
+        if not all([resume, jd, company, chat_history, persona_list, last_question, answer]):
+            return {
+                "error": "평가에 필요한 정보가 부족합니다.",
+                "status": "error",
+                "messages": state.get("messages", []) + [
+                    {"role": "system", "content": "평가에 필요한 정보가 부족합니다."}
+                ],
+            }
+
+        # 평가 프롬프트
+        assessment_prompt = PromptTemplate(
+            input_variables=["resume", "jd", "company", "question", "answer", "persona", "chat_history"],
+            template="""
+역할: 주어진 페르소나 리스트의 면접관들이 지원자의 답변을 평가하고, 그 결과를 합산합니다.
+
+직무 설명:
+{jd}
+
+이력서:
+{resume}
+
+회사 정보:
+{company}
+
+면접 질문:
+{question}
+
+지원자 답변:
+{answer}
+
+대화 이력:
+{chat_history}
+
+면접관 리스트 정보(개별 평가):
+{persona}
+
+[1단계]
+각 페르소나별로 다음 4개 항목을 0~10점으로 평가하세요:
+1. 논리성 (logicScore)
+2. 직무적합성 (jobFitScore)
+3. 핵심가치 부합성 (coreValueFitScore)
+4. 커뮤니케이션 능력 (communicationScore)
+
+[2단계]
+각 항목별 점수를 평균내고, 최종 코멘트를 200자 이내로 작성하세요.
+
+[실제 출력]
+실제 출력에서는 자연스럽게 면접관이 답변하는 형식으로 출력하세요. 점수는 공개하지 마세요.
+"""
+        )
+
+        # 평가 실행
+        parser = JsonOutputParser()
         chain = assessment_prompt | llm | parser
-        
         result = chain.invoke({
-            "jd": state.get("jd", ""),
-            "resume": state.get("resume", ""),
-            "company": state.get("company", ""),
-            "chat_history": state.get("chat_history", ""),
-            "persona": state.get("persona_list", ""),
+            "resume": resume,
+            "jd": jd,
+            "company": company,
+            "question": last_question,
+            "answer": answer,
+            "persona": persona_list,
+            "chat_history": chat_history,
         })
         return {"answer": result}
+
     except Exception as e:
         return {
             "error": f"Evaluate 노드에서 오류 발생: {str(e)}",
             "status": "error",
-            "messages": state.get("messages", [])
-            + [{"role": "system", "content": f"오류: {str(e)}"}],
+            "messages": state.get("messages", []) + [
+                {"role": "system", "content": f"오류: {str(e)}"}
+            ],
         }
     
 
@@ -547,12 +574,11 @@ def conditional_router(state: AgentState) -> str:
 
     # 그래프 노드 이름과 매핑
     route_mapping = {
-        "generation": "generation",
         "question": "generation",
-        "answer": "generation",
+        "response": "evaluate",
+        "evaluate": "evaluate",
         "followup": "followup",
         "modelAnswer": "modelAnswer",
-        "interview_answer": "EvaluateFollowup",
         "other": "llm",
     }
 
@@ -577,6 +603,7 @@ class GraphAgent:
         graph_builder.add_node("router", router)
         graph_builder.add_node("generation", generation)
         graph_builder.add_node("followup", followup)
+        graph_builder.add_node("evaluate", evaluate)
         graph_builder.add_node("llm", call_llm)
         graph_builder.add_node("modelAnswer", modelAnswer)
 
@@ -591,6 +618,7 @@ class GraphAgent:
         # 생성 노드에서 종료
         graph_builder.add_edge("generation", END)
         graph_builder.add_edge("followup", END)
+        graph_builder.add_edge("evaluate", END)
         graph_builder.add_edge("llm", END)
         graph_builder.add_edge("modelAnswer", END)
 
@@ -601,6 +629,7 @@ class GraphAgent:
                 "generation": "generation",
                 "followup": "followup",
                 "llm": "llm",
+                "evaluate": "evaluate",
                 "modelAnswer": "modelAnswer",
             },
         )

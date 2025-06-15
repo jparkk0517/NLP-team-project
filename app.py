@@ -227,6 +227,9 @@ async def get_assessment():
       averageScore: number;
       overallEvaluation: string;
     }"""
+    content = "그동안 진행한 지원자의 면접 답변을 평가해주세요"
+    response = agent.run(content)
+    print(response)
     return {
         "logicScore": 4,
         "jobFitScore": 6,
