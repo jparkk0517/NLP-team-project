@@ -7,7 +7,7 @@ import os
 from typing import Literal
 
 from langchain.prompts import PromptTemplate, ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 
 from langgraph.graph import START, END
 
@@ -39,6 +39,8 @@ class AgentState(TypedDict):
     answer: str  # Agent 답변
     input_type: str  # 사용자 답변 유형
     persona_id: str  # 페르소나 ID
+    selected_persona: str # 페르소나 내용
+    persona_list: list # 가용 페르소나 리스트트
     route_type: str  # routing 결과
     resume: str  # 자소서(이력서)
     jd: str  # 채용공고
@@ -73,7 +75,7 @@ def classify_input(state: AgentState) -> AgentState:
 - 면접질문 요청 (question)
 - 꼬리질문 요청 (followup)
 - 모범답변 요청 (modelAnswer)
-- 답변 (answer)
+- 평가 요청 (evaluate)
 - 그 외 면접과 관련 없는 텍스트 (other)
 
 
@@ -113,8 +115,13 @@ def assign_persona_node(state: AgentState) -> AgentState:
     last_question = state.get("last_question", "")
     persona_id = persona_service.invoke_agent(resume, jd, company, query, last_question)
     print("assign_persona_node > persona_id >", persona_id)
+    
+    if persona_id:
+        persona_info = persona_service.get_persona_str_by_id(persona_id)
+    
+    persona_list = persona_service.get_all_persona_info()
 
-    return {"persona_id": persona_id}
+    return {"persona_id": persona_id, "persona_list": persona_list, "selected_persona": persona_info }
 
 
 def router(state: AgentState) -> AgentState:
@@ -125,17 +132,18 @@ def router(state: AgentState) -> AgentState:
         state (AgentState): 현재 에이전트의 state를 나타내는 객체입니다.
 
     Returns:
-        Literal['question', 'modelAnswer', 'followup', 'llm']: 쿼리에 따라 선택된 경로를 반환합니다.
+        Literal['question', 'modelAnswer', 'followup', 'evaluate', 'llm']: 쿼리에 따라 선택된 경로를 반환합니다.
     """
 
     query = state["query"]
     router_system_prompt = """
-You are an expert at routing a user's input type to 'question', 'modelAnswer', 'followup' or 'llm'.
+You are an expert at routing a user's input type to 'question', 'modelAnswer', 'evaluate', 'followup' or 'llm'.
 If the user input is 'question' route to 'question'.
 else if the user input is 'modelAnswer' route to 'modelAnswer',
+elf if the user input is 'evaluate' route to 'evaluate'.
 else if the user input is 'followup' route to 'followup',
 
-if you think the input is not related to either 'question', 'modelAnswer' or 'followup';
+if you think the input is not related to either 'question', 'modelAnswer', 'evaluate', or 'followup';
 you can route it to 'llm'."""
 
     router_prompt = ChatPromptTemplate.from_messages(
@@ -154,20 +162,20 @@ you can route it to 'llm'."""
 def generation(state: AgentState) -> AgentState:
     """
     사용자 입력과, 이전 대화내용을 바탕으로 면접 질문을 생성하고,
-    결과를 router node로 전달합니다.
+    결과를 전달합니다.
 
     Args:
         state (MessageState): 현재 메시지 상태를 나타내는 객체입니다.
 
     Returns:
-        Command: router node로 이동하기 위한 명령을 반환합니다.
+        Command: 생성한 면접 질문을 반환합니다.
     """
     try:
         # 상태에서 필요한 정보 추출
         resume = state.get("resume", "")
         jd = state.get("jd", "")
         company = state.get("company", "")
-        persona = state.get("persona", "")
+        selected_persona = state.get("selected_persona", "")
 
         generation_prompt = PromptTemplate.from_template(
             """다음은 지원자의 자소서, JD(직무기술서), 회사 정보, 그리고 면접관 페르소나입니다:
@@ -182,7 +190,7 @@ JD:
 {company}
 
 면접관 페르소나:
-{persona}
+{selected_persona}
 
 당신은 위 페르소나를 기반으로 하는 면접관입니다.
 다음 단계를 거쳐 면접 질문을 생성하세요:
@@ -210,7 +218,7 @@ JD:
 
         chain = generation_prompt | llm | StrOutputParser()
         result = chain.invoke(
-            {"resume": resume, "jd": jd, "company": company, "persona": persona}
+            {"resume": resume, "jd": jd, "company": company, "selected_persona": selected_persona}
         )
         print("result", result)
 
@@ -229,13 +237,13 @@ JD:
 def followup(state: AgentState) -> AgentState:
     """
     사용자 입력과, 이전 대화내용을 바탕으로 현재 입력에 대한 꼬리질문을 생성하고,
-    결과를 router node로 전달합니다.
+    결과를 전달합니다.
 
     Args:
       state (MessageState): 현재 메시지 상태를 나타내는 객체입니다.
 
     Returns:
-      Command: router node로 이동하기 위한 명령을 반환합니다.
+      Command: 생성한 꼬리 면접 질문을 반환합니다.
     """
     try:
         # 상태에서 필요한 정보 추출
@@ -314,6 +322,87 @@ JD:
             + [{"role": "system", "content": f"오류: {str(e)}"}],
         }
 
+def evaluate(state: AgentState) -> AgentState:
+    """
+    사용자 입력과, 이전 대화내용을 바탕으로 페르소나별 평가를 생성, 합산하고고
+    최종 평가 결과를 전달합니다.
+
+    Args:
+      state (MessageState): 현재 메시지 상태를 나타내는 객체입니다.
+
+    Returns:
+      Command: 평가 결과를 반환합니다.
+    """
+    
+    class AssessmentResult(BaseModel):
+        logicScore: int
+        jobFitScore: int
+        coreValueFitScore: int
+        communicationScore: int
+        averageScore: float
+        overallEvaluation: str
+
+    parser = JsonOutputParser(pydantic_object=AssessmentResult)
+    
+    assessment_prompt = PromptTemplate(
+        input_variables=["resume", "jd", "company", "question", "answer", "persona"],
+        template="""
+        역할: 주어진 페르소나 리스트의 면접관 개별적으로 지원자의 답변을 평가하고, 그 결과를 합산합니다.
+
+        직무 설명:
+        {jd}
+
+        이력서:
+        {resume}
+
+        회사 정보:
+        {company}
+
+        면접 내용: 
+        {chat_history}
+
+        면접관 리스트 정보(개별 평가):
+        {persona}
+        
+        [1단계]
+        면접관 페르소나별로 다음 4개 항목을 0-10점으로 평가하세요:
+        1. 논리성 (logicScore): 답변의 논리적 일관성과 구조
+        2. 직무적합성 (jobFitScore): JD 요구사항과의 부합도
+        3. 핵심가치 부합성 (coreValueFitScore): 회사 가치와의 일치도
+        4. 커뮤니케이션 능력 (communicationScore): 의사소통 명확성
+        
+        [2단계]
+        각 항목별 면접관 점수를 평균 내고, 최종 코멘트를 200자 이내로 작성하세요:
+        1. 논리성 (logicScore): 답변의 논리적 일관성과 구조
+        2. 직무적합성 (jobFitScore): JD 요구사항과의 부합도
+        3. 핵심가치 부합성 (coreValueFitScore): 회사 가치와의 일치도
+        4. 커뮤니케이션 능력 (communicationScore): 의사소통 명확성
+        5. 종합 평가 코멘트 (overallEvaluation): 종합평가 코멘트 (200자 이내)
+
+        {format_instructions}
+        """,
+        partial_variables={"format_instructions": parser.get_format_instructions()}
+    )
+
+    try:
+        chain = assessment_prompt | llm | parser
+        
+        result = chain.invoke({
+            "jd": state.get("jd", ""),
+            "resume": state.get("resume", ""),
+            "company": state.get("company", ""),
+            "chat_history": state.get("chat_history", ""),
+            "persona": state.get("persona_list", ""),
+        })
+        return {"answer": result}
+    except Exception as e:
+        return {
+            "error": f"Evaluate 노드에서 오류 발생: {str(e)}",
+            "status": "error",
+            "messages": state.get("messages", [])
+            + [{"role": "system", "content": f"오류: {str(e)}"}],
+        }
+    
 
 def modelAnswer(state: AgentState) -> AgentState:
     """
