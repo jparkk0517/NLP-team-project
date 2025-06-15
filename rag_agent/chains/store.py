@@ -85,7 +85,7 @@ def load_vectorstore_from_company_infos():
         for chunk in splitter.split_text(text):
             docs.append(Document(page_content=chunk, metadata={"filename": fname}))
 
-    embeddings = OpenAIEmbeddings()
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     vectorstore = Chroma(
         persist_directory=persist_directory, embedding_function=embeddings
     )
