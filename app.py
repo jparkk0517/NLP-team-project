@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Literal, Optional
@@ -18,13 +19,13 @@ from rag_agent import (
     get_reranking_model_answer_chain,
     compare_model_answers,
     PersonaService,
-    vectorstore, 
-    load_vectorstore_from_company_infos, 
+    vectorstore,
+    load_vectorstore_from_company_infos,
     reset_vectorstore,
     parse_file_to_text,
-    init_local_data
+    init_local_data,
 )
-from rag_agent.chains.interview_graph import GraphAgent
+from rag_agent.chains.interview_graph import GraphAgent, event_stream
 from rag_agent.persona.Persona import Persona, PersonaType
 from rag_agent.persona.PersonaService import PersonaInput
 
@@ -56,12 +57,18 @@ chat_history = ChatHistory.get_instance()
 persona_service = PersonaService.get_instance()
 print(ChatHistory.get_instance(), PersonaService.get_instance())
 
+
+@app.get("/events")
+async def sse():
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 @app.on_event("startup")
 async def load_local_data():
     await init_local_data()
     global stored_resume, stored_jd, stored_company_info, base_chain_inputs, chat_history, model_answer_chain, init_message_chain, reranking_model_answer_chain, agent
     base_dir = os.path.join(os.path.dirname(__file__), "data")
-    
+
     # 이력서 로딩
     resume_dir = os.path.join(base_dir, "resume")
     for fname in os.listdir(resume_dir):
@@ -72,11 +79,11 @@ async def load_local_data():
     for fname in os.listdir(jd_dir):
         stored_jd = parse_file_to_text(os.path.join(jd_dir, fname))
         break
-    
+
     load_vectorstore_from_company_infos()
-    
+
     # 사전 계산: 회사 정보와 체인 초기화
-    stored_company_info = "" # get_company_info(stored_jd)
+    stored_company_info = ""  # get_company_info(stored_jd)
     init_message_chain = get_initial_message_chain()
     reranking_model_answer_chain = get_reranking_model_answer_chain()
     base_chain_inputs = {
@@ -108,6 +115,7 @@ async def load_local_data():
         )
     )
     logger.info("Precomputed company_info and initialized chains.")
+
 
 def search_query_by_vector(query: str) -> str:
     if vectorstore is None:

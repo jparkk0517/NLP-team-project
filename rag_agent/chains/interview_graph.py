@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import Literal
 from dotenv import load_dotenv
@@ -26,18 +27,19 @@ class Route(BaseModel):
         description="The target for the query to answer"
     )
 
+
 class AgentState(TypedDict):
     query: str  # 사용자 답변
     answer: str  # Agent 답변
     input_type: str  # 사용자 답변 유형
     persona_id: str  # 페르소나 ID
-    selected_persona: str # 페르소나 내용
-    persona_list: list # 가용 페르소나 리스트트
+    selected_persona: str  # 페르소나 내용
+    persona_list: list  # 가용 페르소나 리스트트
     route_type: str  # routing 결과
     resume: str  # 자소서(이력서)
     jd: str  # 채용공고
     company: str  # 회사정보 (인재상)
-    company_query: str # 회사정보 검색을 위한 질문
+    company_query: str  # 회사정보 검색을 위한 질문
     chat_history: ChatHistory  # 대화내역
     last_question: str  # 마지막 질문
 
@@ -63,6 +65,7 @@ def get_company_info(query):
         company_info = company_info[:max_company_info_length]
     return company_info
 
+
 doc_relevance_prompt = hub.pull("langchain-ai/rag-document-relevance")
 
 tavily_search_tool = TavilySearchResults(
@@ -72,6 +75,18 @@ tavily_search_tool = TavilySearchResults(
     include_raw_content=True,
     include_images=False,
 )
+
+sse_queue = []
+
+
+async def event_stream():
+    while True:
+        if sse_queue:
+            data = sse_queue.pop(0)
+            yield f"data: {data}\n\n"
+        else:
+            await asyncio.sleep(0.1)  # 큐가 비어있으면 잠시 대기
+
 
 def retrieve(state: AgentState) -> AgentState:
     """
@@ -87,19 +102,19 @@ def retrieve(state: AgentState) -> AgentState:
     company = state.get("company", "")
     print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
     print(company)
-    
+
     if not company or company is None:
         docs = get_company_info(jd)
         if docs is not None:
             doc_relevance_chain = doc_relevance_prompt | llm
-            response = doc_relevance_chain.invoke({'question': jd, 'documents': docs})
-            print("doc_relevance_chain >", response['Score'])
-            
-            if response['Score'] == 1:
-                return {'company': docs}
-        
+            response = doc_relevance_chain.invoke({"question": jd, "documents": docs})
+            print("doc_relevance_chain >", response["Score"])
+
+            if response["Score"] == 1:
+                return {"company": docs}
+
         rewrite_prompt = PromptTemplate.from_template(
-"""사용자의 입력은 채용공고입니다. 내용을 확인하고 해당 기업의 회사정보, 인재상에 대한 웹 검색이 용이하도록 사용자의 질문을 50자 이내 자연어로 작성해주세요.
+            """사용자의 입력은 채용공고입니다. 내용을 확인하고 해당 기업의 회사정보, 인재상에 대한 웹 검색이 용이하도록 사용자의 질문을 50자 이내 자연어로 작성해주세요.
 
 조건:
 - 해당 기업 공식사이트에서 정확한 정보를 가져올 수 있도록 유도
@@ -107,13 +122,14 @@ def retrieve(state: AgentState) -> AgentState:
 - 예시: "삼성 채용 사이트에서 인재상" 또는 "네이버 인재상 site:recruit.navercorp.com"
 
 질문: 
-{query}""")
-
+{query}"""
+        )
+        sse_queue.append("온라인에서 정보를 수집중입니다.")
         rewrite_chain = rewrite_prompt | llm | StrOutputParser()
 
-        company_query = rewrite_chain.invoke({'query': jd})
+        company_query = rewrite_chain.invoke({"query": jd})
         print("web_search query > ", company_query)
-        results = tavily_search_tool.invoke({ "query": company_query })
+        results = tavily_search_tool.invoke({"query": company_query})
         contents = [item.get("content", "") for item in results]
         print("***********************************************************************")
         print(contents)
@@ -121,7 +137,8 @@ def retrieve(state: AgentState) -> AgentState:
     else:
         return {"company": company}
 
-def check_doc_relevance(state: AgentState) -> Literal['relevant', 'irrelvant']:
+
+def check_doc_relevance(state: AgentState) -> Literal["relevant", "irrelvant"]:
     """
     주어진 state를 기반으로 문서의 관련성을 판단합니다.
 
@@ -133,15 +150,16 @@ def check_doc_relevance(state: AgentState) -> Literal['relevant', 'irrelvant']:
     """
     query = state.get("jd", "")
     context = state.get("company", "")
-  
-    doc_relevance_chain = doc_relevance_prompt | llm
-    response = doc_relevance_chain.invoke({'question': query, 'documents': context})
-    print("doc_relevance_chain >", response['Score'])
 
-    if response['Score'] == 1:
-        return 'relevant'
-    
-    return 'irrelvant'
+    doc_relevance_chain = doc_relevance_prompt | llm
+    response = doc_relevance_chain.invoke({"question": query, "documents": context})
+    print("doc_relevance_chain >", response["Score"])
+
+    if response["Score"] == 1:
+        return "relevant"
+
+    return "irrelvant"
+
 
 def rewrite(state: AgentState) -> AgentState:
     """
@@ -153,20 +171,22 @@ def rewrite(state: AgentState) -> AgentState:
     Returns:
         AgentState: 변경된 질문을 포함하는 state를 반환합니다.
     """
-    rewrite_prompt = PromptTemplate.from_template("""사용자의 입력은 채용공고입니다. 내용을 확인하고 해당 기업의 회사정보, 인재상에 대한 웹 검색이 용이하도록 사용자의 질문을 50자 이내 자연어로 작성해주세요.
+    rewrite_prompt = PromptTemplate.from_template(
+        """사용자의 입력은 채용공고입니다. 내용을 확인하고 해당 기업의 회사정보, 인재상에 대한 웹 검색이 용이하도록 사용자의 질문을 50자 이내 자연어로 작성해주세요.
 조건:
 - 해당 기업 공식사이트에서 정확한 정보를 가져올 수 있도록 유도
 - 물음표(?)로 끝나는 질문이 아닌 검색이 용이한 키워드 형태로 출력
 - 예시: "삼성 채용 사이트에서 인재상" 또는 "네이버 인재상 site:recruit.navercorp.com"
 
 질문: 
-{query}""")
+{query}"""
+    )
 
     query = state.get("jd", "")
     rewrite_chain = rewrite_prompt | llm | StrOutputParser()
 
-    response = rewrite_chain.invoke({'query': query})
-    return {'company_query': response}
+    response = rewrite_chain.invoke({"query": query})
+    return {"company_query": response}
 
 
 def web_search(state: AgentState) -> AgentState:
@@ -182,7 +202,7 @@ def web_search(state: AgentState) -> AgentState:
     try:
         query = state.get("company_query", "")
         print("web_search query > ", query)
-        results = tavily_search_tool.invoke({ "query": query })
+        results = tavily_search_tool.invoke({"query": query})
         contents = [item.get("content", "") for item in results]
         print("***********************************************************************")
         print(contents)
@@ -192,9 +212,8 @@ def web_search(state: AgentState) -> AgentState:
         return {
             "error": f"web_search 노드에서 오류 발생: {str(e)}",
             "status": "error",
-            "messages": state.get("messages", []) + [
-                {"role": "system", "content": f"오류: {str(e)}"}
-            ],
+            "messages": state.get("messages", [])
+            + [{"role": "system", "content": f"오류: {str(e)}"}],
         }
 
 
@@ -213,6 +232,7 @@ def classify_input(state: AgentState) -> AgentState:
     query = state.get("query", "")
     chat_history = state.get("chat_history", "")
     print("classify_input > query >", query)
+    # sse_queue.append("입력을 분류중입니다.")
 
     classify_prompt = PromptTemplate.from_template(
         """
@@ -238,8 +258,6 @@ def classify_input(state: AgentState) -> AgentState:
     result = router_chain.invoke({"query": query, "chat_history": chat_history})
 
     print("classify_input > result >", result)
-    
-    
 
     # 결과 메시지를 업데이트하고 router node로 이동합니다.
     return {"input_type": result}
@@ -266,13 +284,18 @@ def assign_persona_node(state: AgentState) -> AgentState:
     last_question = state.get("last_question", "")
     persona_id = persona_service.invoke_agent(resume, jd, company, query, last_question)
     print("assign_persona_node > persona_id >", persona_id)
-    
+    # sse_queue.append("페르소나를 할당중입니다.")
+
     if persona_id:
         persona_info = persona_service.get_persona_str_by_id(persona_id)
-    
+
     persona_list = persona_service.get_all_persona_info()
 
-    return {"persona_id": persona_id, "persona_list": persona_list, "selected_persona": persona_info }
+    return {
+        "persona_id": persona_id,
+        "persona_list": persona_list,
+        "selected_persona": persona_info,
+    }
 
 
 def router(state: AgentState) -> AgentState:
@@ -333,6 +356,7 @@ def generation(state: AgentState) -> AgentState:
     Returns:
         Command: 생성한 면접 질문을 반환합니다.
     """
+    # sse_queue.append("면접 질문을 생성중입니다.")
     try:
         # 상태에서 필요한 정보 추출
         resume = state.get("resume", "")
@@ -382,7 +406,12 @@ JD:
 
         chain = generation_prompt | llm | StrOutputParser()
         result = chain.invoke(
-            {"resume": resume, "jd": jd, "company": company, "selected_persona": selected_persona}
+            {
+                "resume": resume,
+                "jd": jd,
+                "company": company,
+                "selected_persona": selected_persona,
+            }
         )
         print("result", result)
 
@@ -409,6 +438,7 @@ def followup(state: AgentState) -> AgentState:
     Returns:
       Command: 생성한 꼬리 면접 질문을 반환합니다.
     """
+    # sse_queue.append("꼬리 면접 질문을 생성중입니다.")
     try:
         # 상태에서 필요한 정보 추출
         resume = state.get("resume", "")
@@ -487,11 +517,13 @@ JD:
             + [{"role": "system", "content": f"오류: {str(e)}"}],
         }
 
+
 def evaluate(state: AgentState) -> AgentState:
     """
     지원자의 답변과 대화 이력, 페르소나 정보를 바탕으로
     각 페르소나별 평가를 생성하고, 최종 평가 결과를 반환합니다.
     """
+    # sse_queue.append("평가를 진행중입니다.")
     try:
         resume = state.get("resume", "")
         jd = state.get("jd", "")
@@ -502,18 +534,27 @@ def evaluate(state: AgentState) -> AgentState:
         answer = state.get("query", "")
 
         # 필수 정보 체크
-        if not all([resume, jd, company, chat_history, persona_list, last_question, answer]):
+        if not all(
+            [resume, jd, company, chat_history, persona_list, last_question, answer]
+        ):
             return {
                 "error": "평가에 필요한 정보가 부족합니다.",
                 "status": "error",
-                "messages": state.get("messages", []) + [
-                    {"role": "system", "content": "평가에 필요한 정보가 부족합니다."}
-                ],
+                "messages": state.get("messages", [])
+                + [{"role": "system", "content": "평가에 필요한 정보가 부족합니다."}],
             }
 
         # 평가 프롬프트
         assessment_prompt = PromptTemplate(
-            input_variables=["resume", "jd", "company", "question", "answer", "persona", "chat_history"],
+            input_variables=[
+                "resume",
+                "jd",
+                "company",
+                "question",
+                "answer",
+                "persona",
+                "chat_history",
+            ],
             template="""
 역할: 주어진 페르소나 리스트의 면접관들이 지원자의 답변을 평가하고, 그 결과를 합산합니다.
 
@@ -566,38 +607,40 @@ def evaluate(state: AgentState) -> AgentState:
     - 이때는 4가지 항목에 대한 점수를 공개 하세요.
     - 개선점을 말해주세요.
     - 답변은 실제 면접관이 답변을 이어가는 형식으로 생성해야 한다.
-"""
+""",
         )
 
         # 평가 실행
         parser = JsonOutputParser()
         chain = assessment_prompt | llm | StrOutputParser()
-        result = chain.invoke({
-            "resume": resume,
-            "jd": jd,
-            "company": company,
-            "question": last_question,
-            "answer": answer,
-            "persona": persona_list,
-            "chat_history": chat_history,
-        })
+        result = chain.invoke(
+            {
+                "resume": resume,
+                "jd": jd,
+                "company": company,
+                "question": last_question,
+                "answer": answer,
+                "persona": persona_list,
+                "chat_history": chat_history,
+            }
+        )
         return {"answer": result}
 
     except Exception as e:
         return {
             "error": f"Evaluate 노드에서 오류 발생: {str(e)}",
             "status": "error",
-            "messages": state.get("messages", []) + [
-                {"role": "system", "content": f"오류: {str(e)}"}
-            ],
+            "messages": state.get("messages", [])
+            + [{"role": "system", "content": f"오류: {str(e)}"}],
         }
-    
+
 
 def modelAnswer(state: AgentState) -> AgentState:
     """
     STAR 기법 등 구조화된 최적의 모범 답변을 생성하는 LangGraph용 노드 함수.
     이력서, JD, 회사정보, 이전 Q&A, 질문, 페르소나 등 context를 모두 반영.
     """
+    # sse_queue.append("모범답변을 생성중입니다.")
     try:
         # 1. 상태에서 정보 추출
         resume = state.get("resume", "")
@@ -763,7 +806,7 @@ class GraphAgent:
         graph_builder.add_node("retrieve", retrieve)
         graph_builder.add_node("classify_input", classify_input)
         graph_builder.add_node("assign_persona", assign_persona_node)
-        
+
         graph_builder.add_node("router", router)
         graph_builder.add_node("generation", generation)
         graph_builder.add_node("followup", followup)
@@ -799,10 +842,10 @@ class GraphAgent:
                 "modelAnswer": "modelAnswer",
             },
         )
-        
+
         self.graph = graph_builder.compile()
         display(Image(self.graph.get_graph().draw_mermaid_png()))
-        
+
         with open("graph.png", "wb") as f:
             f.write(self.graph.get_graph().draw_mermaid_png())
 
