@@ -8,23 +8,21 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.docstore.document import Document
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
 
-import json
 import os
-import shutil
+import getpass
 
 from rag_agent import (
     ChatHistory,
-    # get_evaluate_chain,
-    # get_followup_chain,
-    # get_interview_chain,
-    # get_model_answer_chain,
     get_initial_message_chain,
     get_reranking_model_answer_chain,
     compare_model_answers,
-    agent_executor,
     PersonaService,
+    vectorstore, 
+    load_vectorstore_from_company_infos, 
+    reset_vectorstore,
+    parse_file_to_text,
+    init_local_data
 )
 from rag_agent.chains.interview_graph import GraphAgent
 from rag_agent.persona.Persona import Persona, PersonaType
@@ -41,68 +39,29 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="AI Interview Simulator")
 dist_path = os.path.join(os.path.dirname(__file__), "frontend/dist")
 
+if not os.environ.get("TAVILY_API_KEY"):
+    os.environ["TAVILY_API_KEY"] = getpass.getpass("Tavily API key:\n")
+
 # 메모리 컨텍스트 저장 변수
 stored_resume: Optional[str] = None
 stored_jd: Optional[str] = None
 # 사전 계산된 회사 정보 및 체인 저장 변수
 stored_company_info: Optional[str] = None
 init_message_chain = None
-interview_chain = None
-followup_chain = None
-evaluate_chain = None
 model_answer_chain = None
-assessment_chain = None
 base_chain_inputs: Optional[dict] = None
-# RAG 벡터 스토어
-vectorstore: Optional[Chroma] = None
-# 영속 디렉토리 설정 (환경변수 또는 기본 경로)
-persist_directory = os.getenv(
-    "CHROMA_DB_PATH",
-    os.path.join(os.path.dirname(__file__), "rag_agent/vectorstore/chroma_db"),
-)
-agent = None
 
 chat_history = ChatHistory.get_instance()
 
 persona_service = PersonaService.get_instance()
 print(ChatHistory.get_instance(), PersonaService.get_instance())
 
-
-# 로컬 파일 시스템에서 context와 회사 자료 자동 로딩
-# TODO: RAG PyPDF2 -> langchain vector db
-def parse_file_to_text(file_path: str) -> str:
-    with open(file_path, "rb") as f:
-        content = f.read()
-    try:
-        return content.decode("utf-8")
-    except UnicodeDecodeError:
-        if file_path.lower().endswith(".pdf"):
-            loader = PyPDFLoader(file_path)
-            docs = loader.load()
-            return "\n".join(doc.page_content for doc in docs)
-        elif file_path.lower().endswith((".docx", ".doc", ".txt")):
-            loader = TextLoader(file_path)
-            docs = loader.load()
-            return "\n".join(doc.page_content for doc in docs)
-        else:
-            return content.decode("utf-8", errors="ignore")
-
-
-async def init_local_data():
-    """로컬 db를 모두 비운다"""
-    global vectorstore
-    if os.path.exists(persist_directory):
-        shutil.rmtree(persist_directory)
-    os.makedirs(persist_directory, exist_ok=True)
-    vectorstore = None
-    logger.info("Vectorstore reset successfully.")
-
-
 @app.on_event("startup")
 async def load_local_data():
     await init_local_data()
-    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain, assessment_chain, init_message_chain, reranking_model_answer_chain, agent
+    global stored_resume, stored_jd, stored_company_info, base_chain_inputs, chat_history, model_answer_chain, init_message_chain, reranking_model_answer_chain, agent
     base_dir = os.path.join(os.path.dirname(__file__), "data")
+    
     # 이력서 로딩
     resume_dir = os.path.join(base_dir, "resume")
     for fname in os.listdir(resume_dir):
@@ -113,26 +72,11 @@ async def load_local_data():
     for fname in os.listdir(jd_dir):
         stored_jd = parse_file_to_text(os.path.join(jd_dir, fname))
         break
-    # 회사 자료 로딩 및 인덱싱
-    company_dir = os.path.join(base_dir, "company_infos")
-    docs = []
-    for fname in os.listdir(company_dir):
-        text = parse_file_to_text(os.path.join(company_dir, fname))
-        splitter = CharacterTextSplitter(chunk_size=512, chunk_overlap=50)
-        for chunk in splitter.split_text(text):
-            docs.append(Document(page_content=chunk, metadata={"filename": fname}))
-    embeddings = OpenAIEmbeddings()
-    vectorstore = Chroma(
-        persist_directory=persist_directory, embedding_function=embeddings
-    )
-    if docs:
-        texts = [d.page_content for d in docs]
-        metadatas = [d.metadata for d in docs]
-        vectorstore.add_texts(texts=texts, metadatas=metadatas)
-        vectorstore.persist()
-    logger.info("Loaded local resume, JD, and company infos.")
+    
+    load_vectorstore_from_company_infos()
+    
     # 사전 계산: 회사 정보와 체인 초기화
-    stored_company_info = get_company_info()
+    stored_company_info = "" # get_company_info(stored_jd)
     init_message_chain = get_initial_message_chain()
     reranking_model_answer_chain = get_reranking_model_answer_chain()
     base_chain_inputs = {
@@ -164,24 +108,6 @@ async def load_local_data():
         )
     )
     logger.info("Precomputed company_info and initialized chains.")
-
-
-def get_company_info():
-    if vectorstore is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Company documents not uploaded. Please upload docs first.",
-        )
-    # 회사 자료 검색
-    retrieved = vectorstore.similarity_search(stored_jd, k=3)
-    company_info = "\n".join([doc.page_content for doc in retrieved])
-    # Trim company_info to avoid exceeding model context window
-    max_company_info_length = 2000
-    if len(company_info) > max_company_info_length:
-        company_info = company_info[:max_company_info_length]
-    logger.info(f"Retrieved company info length: {len(company_info)}")
-    return company_info
-
 
 def search_query_by_vector(query: str) -> str:
     if vectorstore is None:
