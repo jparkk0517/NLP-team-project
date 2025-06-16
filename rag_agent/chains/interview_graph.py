@@ -818,3 +818,24 @@ class GraphAgent:
             ),
         }
         return self.graph.invoke(initial_state)
+
+'''
+Tech Corp
+
+About Us:
+Tech Corp is a leading technology company specializing in artificial intelligence and machine learning solutions. We are committed to innovation and excellence in everything we do.
+
+Culture:
+- Collaborative and inclusive work environment
+- Emphasis on continuous learning and growth
+- Work-life balance
+- Remote-friendly workplace
+
+Benefits:
+- Competitive salary
+- Health insurance
+- 401(k) matching
+- Flexible work hours
+- Professional development opportunities 
+
+'''
