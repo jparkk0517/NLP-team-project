@@ -18,7 +18,7 @@ vectorstore_retriever = None
 # 영속 디렉토리 경로
 persist_directory = os.getenv(
     "CHROMA_DB_PATH",
-    os.path.join(os.path.dirname(__file__), "rag_agent/vectorstore/chroma_db"),
+    os.path.join(os.path.dirname(__file__), "../vectorstore/chroma_db"),
 )
 
 # 프로젝트 루트 기준으로 base_dir 정의
