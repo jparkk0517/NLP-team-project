@@ -22,7 +22,7 @@ load_dotenv()
 
 
 class Route(BaseModel):
-    target: Literal["question", "evaluate", "modelAnswer", "followup", "other"] = Field(
+    target: Literal["question", "response", "evaluate", "modelAnswer", "followup", "other"] = Field(
         description="The target for the query to answer"
     )
 
@@ -283,7 +283,7 @@ def router(state: AgentState) -> AgentState:
         state (AgentState): 현재 에이전트의 state를 나타내는 객체입니다.
 
     Returns:
-        Literal["question", "evaluate", "modelAnswer", "followup", "other"]: 쿼리에 따라 선택된 경로를 반환합니다.
+        Literal["question", "response", "evaluate", "modelAnswer", "followup", "other"]: 쿼리에 따라 선택된 경로를 반환합니다.
     """
 
     query = state["input_type"]
@@ -291,23 +291,20 @@ def router(state: AgentState) -> AgentState:
 You are an expert at routing a user's input type to one of the following:
 - 'question'
 - 'modelAnswer'
+- 'response'
 - 'evaluate'
 - 'followup'
 - 'other'
 
 Instructions:
 - If the input is exactly 'question', return 'question'.
-- If the input is exactly 'response' or exactly 'evaluate', return 'evaluate'.
+- If the input is exactly 'response', return 'response'.
+- If the input is exactly 'evaluate', return 'evaluate'.
 - If the input is exactly 'followup', return 'followup'.
 - If the input is exactly 'modelAnswer', return 'modelAnswer'.
 - Otherwise, return 'other'.
 
-Note:
-- 'response' means a user's response to an interview question.
-- 'evaluate' refers to evaluating that answer.
-Both should be routed to 'evaluate'.
-
-Only return one of: 'question', 'evaluate', 'followup', 'modelAnswer', 'other'."""
+Only return one of: 'question', 'response', 'evaluate', 'followup', 'modelAnswer', 'other'."""
 
     router_prompt = ChatPromptTemplate.from_messages(
         [("system", router_system_prompt), ("user", "{query}")]
@@ -548,17 +545,6 @@ def evaluate(state: AgentState) -> AgentState:
 [2단계]
 각 항목별 점수를 평균내고, 최종 코멘트를 200자 이내로 작성하세요.
 
-[input_type: response 일때, 실제 출력]
-    면접관이 위에서 생성된 4가지 항목을 종합하여 실제로 응답하는 형식으로 생성하세요.
-
-    주의할 점:
-    - 반드시 1단계 Reasoning(분석) 내용은 절대 출력하지 마세요.
-    - 점수를 공개 하지 마세요.
-    - 모든 페르소나 평가 결과를 점수를 제외하고 구어체 형식으로로 말해주세요.
-    - 답변은 실제 면접관이 답변을 이어가는 형식으로 생성해야 한다.
-
-------------------------------------------------------------------------------------------------
-
 [input_type: evaluate 일때, 실제 출력]
     자연스럽게 면접관이 답변하는 형식으로 출력하세요. 점수는 공개하세요.
 
@@ -591,7 +577,101 @@ def evaluate(state: AgentState) -> AgentState:
                 {"role": "system", "content": f"오류: {str(e)}"}
             ],
         }
-    
+
+def response(state: AgentState) -> AgentState:
+    """
+    지원자의 답변과 대화 이력, 페르소나 정보를 바탕으로
+    각 페르소나별 평가를 생성하고, 최종 평가 결과를 반환합니다.
+    """
+    try:
+        resume = state.get("resume", "")
+        jd = state.get("jd", "")
+        company = state.get("company", "")
+        chat_history = state.get("chat_history", "")
+        persona_list = state.get("persona_list", "")
+        last_question = state.get("last_question", "")
+        answer = state.get("query", "")
+
+        # 필수 정보 체크
+        if not all([resume, jd, company, chat_history, persona_list, last_question, answer]):
+            return {
+                "error": "평가에 필요한 정보가 부족합니다.",
+                "status": "error",
+                "messages": state.get("messages", []) + [
+                    {"role": "system", "content": "평가에 필요한 정보가 부족합니다."}
+                ],
+            }
+
+        # 평가 프롬프트
+        assessment_prompt = PromptTemplate(
+            input_variables=["resume", "jd", "company", "question", "answer", "persona", "chat_history"],
+            template="""
+역할: 주어진 페르소나 리스트의 면접관들이 지원자의 답변을 평가하고, 그 결과를 합산합니다.
+
+직무 설명:
+{jd}
+
+이력서:
+{resume}
+
+회사 정보:
+{company}
+
+면접 질문:
+{question}
+
+지원자 답변:
+{answer}
+
+대화 이력:
+{chat_history}
+
+면접관 리스트 정보(개별 평가):
+{persona}
+
+[1단계]
+각 페르소나별로 다음 4개 항목을 0~10점으로 평가하세요:
+1. 논리성 (logicScore)
+2. 직무적합성 (jobFitScore)
+3. 핵심가치 부합성 (coreValueFitScore)
+4. 커뮤니케이션 능력 (communicationScore)
+
+[2단계]
+각 항목별 점수를 평균내고, 최종 코멘트를 200자 이내로 작성하세요.
+
+[input_type: response 일때, 실제 출력]
+    면접관이 위에서 생성된 4가지 항목을 종합하여 실제로 응답하는 형식으로 생성하세요.
+
+    주의할 점:
+    - 반드시 1단계 Reasoning(분석) 내용은 절대 출력하지 마세요.
+    - 점수를 공개 하지 마세요.
+    - 모든 페르소나 평가 결과를 점수를 제외하고 구어체 형식으로로 말해주세요.
+    - 답변은 실제 면접관이 답변을 이어가는 형식으로 생성해야 한다.
+"""
+        )
+
+        # 평가 실행
+        parser = JsonOutputParser()
+        chain = assessment_prompt | llm | StrOutputParser()
+        result = chain.invoke({
+            "resume": resume,
+            "jd": jd,
+            "company": company,
+            "question": last_question,
+            "answer": answer,
+            "persona": persona_list,
+            "chat_history": chat_history,
+        })
+        return {"answer": result}
+
+    except Exception as e:
+        return {
+            "error": f"Evaluate 노드에서 오류 발생: {str(e)}",
+            "status": "error",
+            "messages": state.get("messages", []) + [
+                {"role": "system", "content": f"오류: {str(e)}"}
+            ],
+        }
 
 def modelAnswer(state: AgentState) -> AgentState:
     """
@@ -767,6 +847,7 @@ class GraphAgent:
         graph_builder.add_node("router", router)
         graph_builder.add_node("generation", generation)
         graph_builder.add_node("followup", followup)
+        graph_builder.add_node("response", response)
         graph_builder.add_node("evaluate", evaluate)
         graph_builder.add_node("llm", call_llm)
         graph_builder.add_node("modelAnswer", modelAnswer)
@@ -784,6 +865,7 @@ class GraphAgent:
         # 생성 노드에서 종료
         graph_builder.add_edge("generation", END)
         graph_builder.add_edge("followup", END)
+        graph_builder.add_edge("response", END)
         graph_builder.add_edge("evaluate", END)
         graph_builder.add_edge("llm", END)
         graph_builder.add_edge("modelAnswer", END)
@@ -795,6 +877,7 @@ class GraphAgent:
                 "generation": "generation",
                 "followup": "followup",
                 "llm": "llm",
+                "response": "response",
                 "evaluate": "evaluate",
                 "modelAnswer": "modelAnswer",
             },
