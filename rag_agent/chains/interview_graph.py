@@ -1,38 +1,30 @@
-from dotenv import load_dotenv
-from ..persona.PersonaService import PersonaService
-
-from pydantic import BaseModel, Field
-
 import os
 from typing import Literal
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 from langchain.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
-
-from langgraph.graph import START, END
-
-from typing import TypedDict
+from langchain_community.tools import TavilySearchResults
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+from langchain import hub
+from langgraph.graph import START, END, StateGraph
 
 from rag_agent import ChatHistory
+from ..persona.PersonaService import PersonaService
+from rag_agent.chains.store import get_vectorstore_retriever, get_vectorstore
 
-from langchain_openai import ChatOpenAI
-
-from langgraph.prebuilt import create_react_agent
-
-import os
+from IPython.display import Image, display
 
 load_dotenv()
-
-from typing_extensions import TypedDict
-from langgraph.graph import StateGraph
-from rag_agent import ChatHistory
 
 
 class Route(BaseModel):
     target: Literal["question", "evaluate", "modelAnswer", "followup", "other"] = Field(
         description="The target for the query to answer"
     )
-
 
 class AgentState(TypedDict):
     query: str  # 사용자 답변
@@ -45,6 +37,7 @@ class AgentState(TypedDict):
     resume: str  # 자소서(이력서)
     jd: str  # 채용공고
     company: str  # 회사정보 (인재상)
+    company_query: str # 회사정보 검색을 위한 질문
     chat_history: ChatHistory  # 대화내역
     last_question: str  # 마지막 질문
 
@@ -52,6 +45,157 @@ class AgentState(TypedDict):
 llm = ChatOpenAI(
     api_key=os.getenv("OPENAI_API_KEY"), temperature=0.7, model_name="gpt-4o-mini"
 )
+
+
+def get_company_info(query):
+    # if vectorstore is None:
+    #     raise HTTPException(
+    #         status_code=400,
+    #         detail="Company documents not uploaded. Please upload docs first.",
+    #     )
+    # 회사 자료 검색
+    vectorstore = get_vectorstore()
+    retrieved = vectorstore.similarity_search(query, k=3)
+    company_info = "\n".join([doc.page_content for doc in retrieved])
+    # Trim company_info to avoid exceeding model context window
+    max_company_info_length = 2000
+    if len(company_info) > max_company_info_length:
+        company_info = company_info[:max_company_info_length]
+    return company_info
+
+doc_relevance_prompt = hub.pull("langchain-ai/rag-document-relevance")
+
+tavily_search_tool = TavilySearchResults(
+    max_results=3,
+    search_depth="advanced",
+    include_answer=True,
+    include_raw_content=True,
+    include_images=False,
+)
+
+def retrieve(state: AgentState) -> AgentState:
+    """
+    사용자의 질문에 기반하여 벡터 스토어에서 관련 문서를 검색합니다.
+
+    Args:
+        state (AgentState): 사용자의 질문을 포함한 에이전트의 현재 state.
+
+    Returns:
+        AgentState: 검색된 문서가 추가된 state를 반환합니다.
+    """
+    jd = state.get("jd", "")
+    company = state.get("company", "")
+    print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+    print(company)
+    
+    if not company or company is None:
+        docs = get_company_info(jd)
+        if docs is not None:
+            doc_relevance_chain = doc_relevance_prompt | llm
+            response = doc_relevance_chain.invoke({'question': jd, 'documents': docs})
+            print("doc_relevance_chain >", response['Score'])
+            
+            if response['Score'] == 1:
+                return {'company': docs}
+        
+        rewrite_prompt = PromptTemplate.from_template(
+"""사용자의 입력은 채용공고입니다. 내용을 확인하고 해당 기업의 회사정보, 인재상에 대한 웹 검색이 용이하도록 사용자의 질문을 50자 이내 자연어로 작성해주세요.
+
+조건:
+- 해당 기업 공식사이트에서 정확한 정보를 가져올 수 있도록 유도
+- 물음표(?)로 끝나는 질문이 아닌 검색이 용이한 키워드 형태로 출력
+- 예시: "삼성 채용 사이트에서 인재상" 또는 "네이버 인재상 site:recruit.navercorp.com"
+
+질문: 
+{query}""")
+
+        rewrite_chain = rewrite_prompt | llm | StrOutputParser()
+
+        company_query = rewrite_chain.invoke({'query': jd})
+        print("web_search query > ", company_query)
+        results = tavily_search_tool.invoke({ "query": company_query })
+        contents = [item.get("content", "") for item in results]
+        print("***********************************************************************")
+        print(contents)
+        return {"company": contents}
+    else:
+        return {"company": company}
+
+def check_doc_relevance(state: AgentState) -> Literal['relevant', 'irrelvant']:
+    """
+    주어진 state를 기반으로 문서의 관련성을 판단합니다.
+
+    Args:
+        state (AgentState): 사용자의 질문과 문맥을 포함한 에이전트의 현재 state.
+
+    Returns:
+        Literal['relevant', 'irrelevant']: 문서가 관련성이 높으면 'relevant', 그렇지 않으면 'irrelevant'를 반환합니다.
+    """
+    query = state.get("jd", "")
+    context = state.get("company", "")
+  
+    doc_relevance_chain = doc_relevance_prompt | llm
+    response = doc_relevance_chain.invoke({'question': query, 'documents': context})
+    print("doc_relevance_chain >", response['Score'])
+
+    if response['Score'] == 1:
+        return 'relevant'
+    
+    return 'irrelvant'
+
+def rewrite(state: AgentState) -> AgentState:
+    """
+    사용자의 질문을 사전을 참고하여 변경합니다.
+
+    Args:
+        state (AgentState): 사용자의 질문을 포함한 에이전트의 현재 state.
+
+    Returns:
+        AgentState: 변경된 질문을 포함하는 state를 반환합니다.
+    """
+    rewrite_prompt = PromptTemplate.from_template("""사용자의 입력은 채용공고입니다. 내용을 확인하고 해당 기업의 회사정보, 인재상에 대한 웹 검색이 용이하도록 사용자의 질문을 50자 이내 자연어로 작성해주세요.
+조건:
+- 해당 기업 공식사이트에서 정확한 정보를 가져올 수 있도록 유도
+- 물음표(?)로 끝나는 질문이 아닌 검색이 용이한 키워드 형태로 출력
+- 예시: "삼성 채용 사이트에서 인재상" 또는 "네이버 인재상 site:recruit.navercorp.com"
+
+질문: 
+{query}""")
+
+    query = state.get("jd", "")
+    rewrite_chain = rewrite_prompt | llm | StrOutputParser()
+
+    response = rewrite_chain.invoke({'query': query})
+    return {'company_query': response}
+
+
+def web_search(state: AgentState) -> AgentState:
+    """
+    주어진 state를 기반으로 웹 검색을 수행합니다.
+
+    Args:
+        state (AgentState): 사용자의 질문을 포함한 에이전트의 현재 state.
+
+    Returns:
+        AgentState: 웹 검색 결과가 추가된 state를 반환합니다.
+    """
+    try:
+        query = state.get("company_query", "")
+        print("web_search query > ", query)
+        results = tavily_search_tool.invoke({ "query": query })
+        contents = [item.get("content", "") for item in results]
+        print("***********************************************************************")
+        print(contents)
+        return {"company": contents}
+    except Exception as e:
+        print(str(e))
+        return {
+            "error": f"web_search 노드에서 오류 발생: {str(e)}",
+            "status": "error",
+            "messages": state.get("messages", []) + [
+                {"role": "system", "content": f"오류: {str(e)}"}
+            ],
+        }
 
 
 def classify_input(state: AgentState) -> AgentState:
@@ -94,6 +238,8 @@ def classify_input(state: AgentState) -> AgentState:
     result = router_chain.invoke({"query": query, "chat_history": chat_history})
 
     print("classify_input > result >", result)
+    
+    
 
     # 결과 메시지를 업데이트하고 router node로 이동합니다.
     return {"input_type": result}
@@ -614,8 +760,10 @@ class GraphAgent:
         graph_builder = StateGraph(AgentState)
 
         # 노드 추가
+        graph_builder.add_node("retrieve", retrieve)
         graph_builder.add_node("classify_input", classify_input)
         graph_builder.add_node("assign_persona", assign_persona_node)
+        
         graph_builder.add_node("router", router)
         graph_builder.add_node("generation", generation)
         graph_builder.add_node("followup", followup)
@@ -624,10 +772,12 @@ class GraphAgent:
         graph_builder.add_node("modelAnswer", modelAnswer)
 
         # 시작점에서 병렬 실행
+        graph_builder.add_edge(START, "retrieve")
         graph_builder.add_edge(START, "classify_input")
         graph_builder.add_edge(START, "assign_persona")
 
         # 두 병렬 노드가 완료되면 라우터로
+        graph_builder.add_edge("retrieve", "router")
         graph_builder.add_edge("classify_input", "router")
         graph_builder.add_edge("assign_persona", "router")
 
@@ -649,8 +799,12 @@ class GraphAgent:
                 "modelAnswer": "modelAnswer",
             },
         )
-
+        
         self.graph = graph_builder.compile()
+        display(Image(self.graph.get_graph().draw_mermaid_png()))
+        
+        with open("graph.png", "wb") as f:
+            f.write(self.graph.get_graph().draw_mermaid_png())
 
     def run(self, query: str) -> str:
         initial_state = {
