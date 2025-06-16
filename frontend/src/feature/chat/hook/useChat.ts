@@ -66,7 +66,7 @@ const useRequest = () => {
     async (questionId: string) => {
       try {
         await mutateAsync({
-          type: 'modelAnswer',
+          type: 'answer',
           content: '모범답변 해줘',
           related_chatting_id: questionId,
         });

@@ -5,7 +5,6 @@ import { Button, Form, Input, Tag } from 'antd';
 import useChatStore from '../../../shared/chatStore';
 import { useRef } from 'react';
 import { useEffect } from 'react';
-import { debounce } from '../../../shared/utils';
 import { useRequest } from '../hook/useChat';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -20,16 +19,16 @@ const ChatInput = () => {
 
   const handleSubmit = useCallback(async () => {
     const message = form.getFieldValue('message');
-    const debounced = debounce(async () => {
-      if (!inputable || !lastMessage) return;
-      try {
-        await answer(lastMessage.id, message);
-      } catch (error) {
-        console.error(error);
-      }
-    }, 100);
-    debounced();
-  }, [answer, form, inputable, lastMessage]);
+    if (!inputable || !lastMessage) return;
+    try {
+      await answer(lastMessage.id, message);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ['chatHistory'] });
+      form.resetFields();
+    }
+  }, [answer, form, inputable, lastMessage, queryClient]);
 
   const handleStaticAction = useCallback(
     async (action: 'followUpQuestion' | 'bestAnswer' | 'nextQuestion') => {
