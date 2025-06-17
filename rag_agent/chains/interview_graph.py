@@ -672,14 +672,14 @@ def response(state: AgentState) -> AgentState:
 {persona}
 
 [1단계]
-각 페르소나별로 다음 4개 항목을 0~10점으로 평가하세요:
+각 페르소나별로 다음 4개 항목을 서술형으로 평가하세요:
 1. 논리성 (logicScore)
 2. 직무적합성 (jobFitScore)
 3. 핵심가치 부합성 (coreValueFitScore)
 4. 커뮤니케이션 능력 (communicationScore)
 
 [2단계]
-각 항목별 점수를 평균내고, 최종 코멘트를 200자 이내로 작성하세요.
+최종 코멘트를 200자 이내로 작성하세요.
 
 [input_type: response 일때, 실제 출력]
     면접관이 위에서 생성된 4가지 항목을 종합하여 실제로 응답하는 형식으로 생성하세요.
