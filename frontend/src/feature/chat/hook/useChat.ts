@@ -7,12 +7,9 @@ import type {
   ContentType,
   RequestInputDTO,
 } from '../../../shared/type';
+
 import { useShallow } from 'zustand/shallow';
 
-const mockData = [] as ChatHistoryDTO[];
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-expect-error
-window.mockData = mockData;
 const useChatHistory = () => {
   const { chatHistory, setChatHistory, setLastMessage } = useChatStore(
     useShallow(state => ({
@@ -23,9 +20,7 @@ const useChatHistory = () => {
   );
   const res = useQuery({
     queryKey: ['chatHistory'],
-    queryFn: async () => {
-      return await [...mockData];
-    },
+    queryFn: () => Api.GET<ChatHistoryDTO[]>('/chatHistory'),
   });
 
   useEffect(() => {
@@ -68,29 +63,13 @@ const useRequest = () => {
       return await Api.POST<RequestInputDTO, ChatHistoryDTO[]>('/', data);
     },
   });
-
-  const { mutateAsync: bestAnswer, isPending: isBestAnswerPending } =
-    useMutation({
-      mutationFn: async ({ questionId }: { questionId: string }) => {
-        mockData.push({
-          id: mockData.length.toString(),
+  const bestAnswer = useCallback(
+    async (questionId: string) => {
+      try {
+        await mutateAsync({
           type: 'modelAnswer',
-          speaker: 'agent',
-          content: `${questionId} 에 대한 최적의 답변`,
-        });
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        return await Promise.resolve(null);
-      },
-    });
-
-  const { mutateAsync: nextQuestion, isPending: isNextQuestionPending } =
-    useMutation({
-      mutationFn: async () => {
-        mockData.push({
-          id: mockData.length.toString(),
-          type: 'question',
-          speaker: 'agent',
-          content: '새로운 질문입니다.',
+          content: '모범답변 해줘',
+          related_chatting_id: questionId,
         });
       } catch (e) {
         console.error(e);
@@ -110,50 +89,10 @@ const useRequest = () => {
     }
   }, [mutateAsync]);
 
-  const answer = useCallback(
-    async (questionId: string, content: string) => {
-      try {
-        await mutateAsync({
-          type: 'answer',
-          content,
-          related_chatting_id: questionId,
-        });
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [mutateAsync]
-  );
-
   return {
-    // followUpQuestion,
     bestAnswer,
     nextQuestion,
-    // isFollowUpQuestionPending,
-    isBestAnswerPending,
-    isNextQuestionPending,
   };
 };
 
-const useChat = () => {
-  return useMutation({
-    mutationFn: async (message: string) => {
-      mockData.push({
-        id: mockData.length.toString(),
-        type: 'question',
-        speaker: 'user',
-        content: message,
-      });
-      mockData.push({
-        id: mockData.length.toString(),
-        type: 'answer',
-        speaker: 'agent',
-        content: `${message} 는 훌륭한 답변이에요.`,
-      });
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return await Promise.resolve(null);
-    },
-  });
-};
-
-export { useChatHistory, useRequest, useChat };
+export { useChatHistory, useRequest };

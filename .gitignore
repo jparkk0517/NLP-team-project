@@ -1,5 +1,6 @@
 # Environment variables
 .env
+.venv
 
 # Frontend
 frontend/node_modules
@@ -16,3 +17,5 @@ data/company_infos/*
 rag_agent/**/__pycache__/
 *.py[cod]
 rag_agent/vectorstore/**/*
+
+node_modules/

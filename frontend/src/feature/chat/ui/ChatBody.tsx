@@ -90,20 +90,6 @@ const ChatBody = () => {
 
 
 
-  useEffect(() => {
-    if (data?.length === 0) {
-      if (!isFirst.current) return;
-      isFirst.current = false;
-      nextQuestion().then(() => {
-        refetch();
-      });
-    }
-
-    if (chatEndRef.current) {
-      chatEndRef.current?.scrollIntoView();
-    }
-  }, [data, nextQuestion, refetch]);
-
   return (
     <div className="relative flex-grow">
       <div

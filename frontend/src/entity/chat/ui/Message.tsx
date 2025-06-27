@@ -13,12 +13,11 @@ const UserIcon = () => {
   );
 };
 
-const AgentIcon = () => {
+const AgentIcon = ({ persona }: { persona?: PersonaDTO }) => {
   return (
     <div className="">
       <span
-        className={`text-black rounded-full p-2 w-[50px] h-[50px] flex items-center justify-center m-2 bg-yellow-300`}
-      >
+        className={`text-black rounded-full p-2 w-[50px] h-[50px] flex items-center justify-center m-2 bg-yellow-300`}>
         {persona?.name ?? 'Agent'}
       </span>
     </div>
@@ -27,12 +26,10 @@ const AgentIcon = () => {
 
 const Content = ({
   content,
-  bottomContent,
   textAlign = 'left',
 }: {
   content: string;
   textAlign?: 'left' | 'right';
-  bottomContent?: React.ReactNode;
 }) => {
   return (
     <div className={`flex flex-col justify-end max-w-[80%]
@@ -49,7 +46,6 @@ const Content = ({
       >
         {content}
       </div>
-      {bottomContent}
     </div>
   );
 };
@@ -70,7 +66,6 @@ const LoadingContent = () => {
 }
 
 const Message = ({
-  id,
   speaker,
   content,
   // isLastMessage,

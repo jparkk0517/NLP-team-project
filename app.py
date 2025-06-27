@@ -1,24 +1,41 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
-from typing import Callable, Literal, Optional
+from pydantic import BaseModel
+from typing import Literal, Optional
 import uvicorn
-from rag_agent.chains.interview_chain import get_followup_chain, get_interview_chain
 import logging
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.docstore.document import Document
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
+
+import json
 import os
-import io
 import shutil
 
-# PDF/DOCX 파싱
-import PyPDF2
-import docx
+from rag_agent import (
+    ChatHistory,
+    # get_evaluate_chain,
+    # get_followup_chain,
+    # get_interview_chain,
+    # get_model_answer_chain,
+    get_initial_message_chain,
+    get_reranking_model_answer_chain,
+    compare_model_answers,
+    agent_executor,
+    PersonaService,
+)
+from rag_agent.chains.interview_graph import GraphAgent
+from rag_agent.persona.Persona import Persona, PersonaType
+from rag_agent.persona.PersonaService import PersonaInput
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Interview Simulator")
@@ -29,8 +46,12 @@ stored_resume: Optional[str] = None
 stored_jd: Optional[str] = None
 # 사전 계산된 회사 정보 및 체인 저장 변수
 stored_company_info: Optional[str] = None
+init_message_chain = None
 interview_chain = None
 followup_chain = None
+evaluate_chain = None
+model_answer_chain = None
+assessment_chain = None
 base_chain_inputs: Optional[dict] = None
 # RAG 벡터 스토어
 vectorstore: Optional[Chroma] = None
@@ -39,50 +60,16 @@ persist_directory = os.getenv(
     "CHROMA_DB_PATH",
     os.path.join(os.path.dirname(__file__), "rag_agent/vectorstore/chroma_db"),
 )
+agent = None
 
+chat_history = ChatHistory.get_instance()
 
-class ChatHistory(BaseModel):
-    """
-    question, answer 쌍을 저장하는 클래스
-    질문-답변 쌍으로 저장이 되어야하고
-    질문-답변 쌍을 추가하는 메서드와
-    질문-답변 쌍을 반환하는 메서드가 있어야한다.
-    모든 질문-답변 쌍을 반환하는 메서드가 있어야 한다.
-    """
-    # list[dict[id, question]]
-    question_history: list[dict[str, str]] = Field(default_factory=list)
-    answer_history: list[dict[str, str]] = Field(default_factory=list)
-
-    
-
-    def add_question(self, question: str):
-        self.question_history.append(
-            {"question_id": len(self.question_history), "question": question}
-        )
-        
-        
-        return self.question_history[-1]["question_id"]
-
-    def add_answer(self, question_id: str, answer: str):
-        self.answer_history.append({"question_id": question_id, "answer": answer})
-        
-        
-        return self.answer_history[-1]["question_id"]
-
-    def get_all_history(self) -> list[dict[str, str]]:
-        """List[{question, answer}]"""
-        
-        
-        return [
-            {"question": q["question"], "answer": a["answer"]}
-            for q, a in zip(self.question_history, self.answer_history)
-        ]
-
-
-chat_history = ChatHistory()
+persona_service = PersonaService.get_instance()
+print(ChatHistory.get_instance(), PersonaService.get_instance())
 
 
 # 로컬 파일 시스템에서 context와 회사 자료 자동 로딩
+# TODO: RAG PyPDF2 -> langchain vector db
 def parse_file_to_text(file_path: str) -> str:
     with open(file_path, "rb") as f:
         content = f.read()
@@ -90,11 +77,13 @@ def parse_file_to_text(file_path: str) -> str:
         return content.decode("utf-8")
     except UnicodeDecodeError:
         if file_path.lower().endswith(".pdf"):
-            reader = PyPDF2.PdfReader(io.BytesIO(content))
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
-        elif file_path.lower().endswith((".docx", ".doc")):
-            doc = docx.Document(io.BytesIO(content))
-            return "\n".join(p.text for p in doc.paragraphs)
+            loader = PyPDFLoader(file_path)
+            docs = loader.load()
+            return "\n".join(doc.page_content for doc in docs)
+        elif file_path.lower().endswith((".docx", ".doc", ".txt")):
+            loader = TextLoader(file_path)
+            docs = loader.load()
+            return "\n".join(doc.page_content for doc in docs)
         else:
             return content.decode("utf-8", errors="ignore")
 
@@ -112,7 +101,7 @@ async def init_local_data():
 @app.on_event("startup")
 async def load_local_data():
     await init_local_data()
-    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history
+    global stored_resume, stored_jd, vectorstore, stored_company_info, interview_chain, followup_chain, base_chain_inputs, chat_history, evaluate_chain, model_answer_chain, assessment_chain, init_message_chain, reranking_model_answer_chain, agent
     base_dir = os.path.join(os.path.dirname(__file__), "data")
     # 이력서 로딩
     resume_dir = os.path.join(base_dir, "resume")
@@ -129,7 +118,7 @@ async def load_local_data():
     docs = []
     for fname in os.listdir(company_dir):
         text = parse_file_to_text(os.path.join(company_dir, fname))
-        splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        splitter = CharacterTextSplitter(chunk_size=512, chunk_overlap=50)
         for chunk in splitter.split_text(text):
             docs.append(Document(page_content=chunk, metadata={"filename": fname}))
     embeddings = OpenAIEmbeddings()
@@ -144,24 +133,37 @@ async def load_local_data():
     logger.info("Loaded local resume, JD, and company infos.")
     # 사전 계산: 회사 정보와 체인 초기화
     stored_company_info = get_company_info()
-    interview_chain = get_interview_chain()
-    followup_chain = get_followup_chain()
+    init_message_chain = get_initial_message_chain()
+    reranking_model_answer_chain = get_reranking_model_answer_chain()
     base_chain_inputs = {
         "resume": stored_resume,
         "jd": stored_jd,
         "company_infos": stored_company_info,
     }
+
+    agent = GraphAgent(
+        resume=stored_resume,
+        jd=stored_jd,
+        company=stored_company_info,
+    )
+    # 페르소나 추가 (테스트용)
+    persona_service.add_persona(
+        PersonaInput(
+            name="Recruiter",
+            type="other",
+            interests=["조직 적응력", "인성"],
+            communicationStyle="차분하고 상냥한 스타일",
+        )
+    )
+    persona_service.add_persona(
+        PersonaInput(
+            name="CTO",
+            type="developer",
+            interests=["이슈 해결 과정과 Lessons Learned"],
+            communicationStyle="불필요한 말은 하지 않음, 합리적이고 이성적인 스타일",
+        )
+    )
     logger.info("Precomputed company_info and initialized chains.")
-
-
-class AnswerRequest(BaseModel):
-    question_id: str
-    user_answer: str
-
-
-class FollowUpRequest(BaseModel):
-    user_answer: str
-    mode: str  # "tail", "model", "next"
 
 
 def get_company_info():
@@ -181,61 +183,151 @@ def get_company_info():
     return company_info
 
 
-@app.post("/question")
-async def generate_question():
-    try:
-        if interview_chain is None or base_chain_inputs is None:
-            raise HTTPException(
-                status_code=500, detail="Interview chain not initialized."
-            )
-        logger.info("Generating question using pre-initialized chain")
-        response = interview_chain.invoke(base_chain_inputs)
-        logger.info("Chain invocation completed")
+@app.get("/chatHistory")
+async def get_chat_history():
+    if not chat_history.history:
+        try:
+            if init_message_chain is None:
+                raise HTTPException(
+                    status_code=500, detail="Initial message chain not initialized."
+                )
+            logger.info("No chat history found. Generating initial message...")
+            response = init_message_chain.invoke({})
+            logger.info("Chain invocation completed")
 
-        question_id = chat_history.add_question(response["result"])
-        return {
-            "question": {
-                "question_id": question_id,
-                "question": response["result"],
-            }
-        }
+            chat_history.add(
+                type="question", speaker="agent", content=response["result"]
+            )
+            return chat_history.get_all_history()
+        except Exception as e:
+            logger.error(f"Error in question generation: {str(e)}")
+    return chat_history.get_all_history()
+
+
+RequestType = Literal["question", "followup", "modelAnswer", "answer", "other"]
+
+
+class RequestInput(BaseModel):
+    type: Optional[RequestType] = None
+    content: str
+    related_chatting_id: Optional[str] = None
+
+
+
+
+@app.post("/")
+async def analyze_input(request: RequestInput):
+    type = request.type
+    content = request.content
+    related_chatting_id = request.related_chatting_id
+    chat_history.add(type=type, speaker="user", content=content)
+    try:
+        resume = base_chain_inputs["resume"]
+        jd = base_chain_inputs["jd"]
+        company = base_chain_inputs["company_infos"]
+        last_question = chat_history.get_question_by_id(
+            chat_history.get_latest_question_id()
+        )
+        recent_history = chat_history.get_all_history_as_string()
+
+        persona_id = persona_service.invoke_agent(
+            resume=resume, jd=jd, applicant_answer=content
+        )
+
+        persona_info = ""
+        if "null" not in persona_id:
+            persona_info = persona_service.get_persona_str_by_id(persona_id)
+
+        response = agent.run(content)
+        
+        # modelAnswer 타입일 때만 reranking 수행
+        if type == "modelAnswer":
+            original_answer = response.get("answer", "")
+
+            # 이전 질문/답변 쌍들 가져오기
+            prev_pairs = []
+            for item in chat_history.history:
+                if item.type == "question" and item.related_chatting_id:
+                    answer = next(
+                        (
+                            a
+                            for a in chat_history.history
+                            if a.id == item.related_chatting_id
+                        ),
+                        None,
+                    )
+                    if answer:
+                        prev_pairs.append(
+                            {"question": item.content, "answer": answer.content}
+                        )
+
+            # reranking 답변 3개 생성
+            reranked_responses = []
+            for _ in range(3):
+                reranked_response = reranking_model_answer_chain.invoke(
+                    {
+                        **base_chain_inputs,
+                        "question": last_question.content if last_question else "",
+                        "prev_question_answer_pairs": prev_pairs,
+                    }
+                )
+                reranked_responses.append(reranked_response["result"])
+
+            # 각 답변을 원본과 비교하여 점수 계산
+            best_score = -1
+            best_answer = original_answer
+            for answer in reranked_responses:
+                comparison = compare_model_answers(original_answer, answer)
+                score = comparison["overall"]["reranked_total"]
+                if score > best_score:
+                    best_score = score
+                    best_answer = answer
+
+            # 최종 답변 저장
+            chat_history.add(
+                type="modelAnswer",
+                speaker="agent",
+                content=best_answer,
+                related_chatting_id=related_chatting_id,
+                persona_info=persona_info,
+            )
+        else:
+            # reranking이 필요없는 경우 원본 응답 저장
+            chat_history.add(
+                type="question",
+                speaker="agent",
+                content=response.get("answer", ""),
+                persona_info=persona_info,
+            )
+
+        return chat_history.get_all_history()
     except Exception as e:
-        logger.error(f"Error in question generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/evaluate")
-async def evaluate_answer(request: AnswerRequest):
-    print(request)
-    question_id = request.question_id
-    answer = request.user_answer
-    chat_history.add_answer(question_id, answer)
-    return {"response": answer}
+@app.get("/persona/list")
+async def get_persona_list():
+    return persona_service.get_all_persona_info()
 
 
-@app.post("/followup")
-async def generate_followup():
-    if chat_history.question_history is None:
-        raise HTTPException(status_code=400, detail="No question generated yet.")
-    if chat_history.answer_history is None:
-        raise HTTPException(status_code=400, detail="No answer generated yet.")
+@app.post("/persona")
+async def add_persona(persona: PersonaInput):
     try:
-        logger.info("Generating followup using pre-initialized chain")
-        if followup_chain is None or base_chain_inputs is None:
-            raise HTTPException(
-                status_code=500, detail="Followup chain not initialized."
-            )
-        inputs = {
-            **base_chain_inputs,
-            "prev_question_answer_pairs": chat_history.get_all_history(),
-        }
-        response = followup_chain.invoke(inputs)
-        question_id = chat_history.add_question(response["result"])
-        logger.info("Followup generated")
-        return {"response": question_id}
+        new_persona = persona_service.add_persona(persona)
+        return new_persona.get_persona_info()
     except Exception as e:
-        logger.error(f"Error in followup generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/persona/{persona_id}")
+async def delete_persona(persona_id: str):
+    persona = persona_service.get_persona_by_id(persona_id)
+    if not persona:
+        raise HTTPException(status_code=404, detail="Persona not found.")
+    persona_service.delete_persona(persona_id)
+    return None
+
+
 
 
 app.mount("/", StaticFiles(directory=dist_path, html=True), name="frontend")

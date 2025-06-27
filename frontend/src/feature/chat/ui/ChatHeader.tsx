@@ -1,11 +1,18 @@
+import { MdOutlineAssessment } from 'react-icons/md';
+import AssessmentPopup from '../../assessment/ui/AssessmentPopup';
+import { Modal } from 'antd';
+import { useState } from 'react';
+
 const ChatHeader = () => {
+  const [open, setOpen] = useState(false);
+  const handleAssessment = () => {
+    setOpen(true);
+  };
   return (
-<<<<<<< Updated upstream
     <div className='flex items-center justify-around h-16 p-4 h-[5%] border-b-2 border-gray-300'>
       <div className='flex items-center gap-2'>
         <span>Chat</span>
       </div>
-=======
     <div className="relative flex items-center justify-around p-4 h-[5%] border-b-2 border-gray-300">
       <div className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl cursor-pointer">
         <div className="flex items-center gap-2" onClick={handleAssessment}>
@@ -19,7 +26,7 @@ const ChatHeader = () => {
       <Modal open={open} onCancel={() => setOpen(false)}>
         <AssessmentPopup />
       </Modal>
->>>>>>> Stashed changes
+    </div>
     </div>
   );
 };

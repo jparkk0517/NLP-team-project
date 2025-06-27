@@ -18,22 +18,20 @@ const NewPersonaForm = ({ addPersona }: NewPersonaFormProps) => {
   };
 
   return (
-    <div className="p-4">
+    <div className='p-4'>
       <Form form={form} onFinish={handleSubmit}>
         <Form.Item
-          name="name"
-          label="이름"
+          name='name'
+          label='이름'
           rules={[{ required: true, message: '이름을 입력해주세요' }]}
-          validateTrigger={['submit']}
-        >
+          validateTrigger={['submit']}>
           <Input />
         </Form.Item>
         <Form.Item
-          name="type"
-          label="타입"
+          name='type'
+          label='타입'
           rules={[{ required: true, message: '타입을 선택해주세요' }]}
-          validateTrigger={['submit']}
-        >
+          validateTrigger={['submit']}>
           <Select<PersonaType>
             options={[
               { label: '개발자', value: 'developer' },
@@ -43,8 +41,8 @@ const NewPersonaForm = ({ addPersona }: NewPersonaFormProps) => {
             ]}
           />
         </Form.Item>
-        <Form.Item label="관심사">
-          <Form.List name="interests">
+        <Form.Item label='관심사'>
+          <Form.List name='interests'>
             {(fields, { add, remove }) => (
               <div
                 style={{
@@ -52,23 +50,20 @@ const NewPersonaForm = ({ addPersona }: NewPersonaFormProps) => {
                   flexDirection: 'column',
                   rowGap: 0,
                   width: '100%',
-                }}
-              >
-                {fields.map(field => (
-                  <div className="flex items-unset justify-between w-full">
+                }}>
+                {fields.map((field) => (
+                  <div className='flex items-unset justify-between w-full'>
                     <Form.Item
                       key={field.key}
                       name={field.name}
-                      style={{ width: '90%' }}
-                    >
+                      style={{ width: '90%' }}>
                       <Input />
                     </Form.Item>
                     <Button
                       danger
                       onClick={() => {
                         remove(field.name);
-                      }}
-                    >
+                      }}>
                       제거
                     </Button>
                   </div>
@@ -78,10 +73,10 @@ const NewPersonaForm = ({ addPersona }: NewPersonaFormProps) => {
             )}
           </Form.List>
         </Form.Item>
-        <Form.Item name="communicationStyle" label="대화 스타일">
+        <Form.Item name='communicationStyle' label='대화 스타일'>
           <Input.TextArea />
         </Form.Item>
-        <Button type="primary" htmlType="submit" className="w-full">
+        <Button type='primary' htmlType='submit' className='w-full'>
           면접관 생성
         </Button>
       </Form>

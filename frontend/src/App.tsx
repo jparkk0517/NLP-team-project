@@ -6,6 +6,7 @@ import {
 import ChatPage from './page/ChatPage';
 import { notification } from 'antd';
 import { useEffect } from 'react';
+import ToastProvider from './shared/toast';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -41,6 +42,7 @@ function App() {
       {contextHolder}
       <QueryClientProvider client={queryClient}>
         <ChatPage />
+        <ToastProvider />
       </QueryClientProvider>
       </div>
     );
