@@ -12,6 +12,7 @@ export interface ChatHistoryDTO {
   content: string;
   isLastMessageAnswer?: boolean;
   persona?: PersonaDTO;
+  isLoading?: boolean;
 }
 export interface AnswerRequestDTO {
   questionId: string;

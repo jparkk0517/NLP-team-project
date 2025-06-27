@@ -63,6 +63,22 @@ const useRequest = () => {
       return await Api.POST<RequestInputDTO, ChatHistoryDTO[]>('/', data);
     },
   });
+
+  const followUpQuestion = useCallback(
+    async (questionId: string) => {
+      try {
+        await mutateAsync({
+          type: 'followup',
+          content: '꼬리질문 해줘',
+          related_chatting_id: questionId,
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [mutateAsync]
+  );
+
   const bestAnswer = useCallback(
     async (questionId: string) => {
       try {
@@ -89,9 +105,26 @@ const useRequest = () => {
     }
   }, [mutateAsync]);
 
+  const answer = useCallback(
+    async (questionId: string, content: string) => {
+      try {
+        await mutateAsync({
+          type: 'answer',
+          content,
+          related_chatting_id: questionId,
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [mutateAsync]
+  );
+
   return {
     bestAnswer,
     nextQuestion,
+    answer,
+    followUpQuestion,
   };
 };
 
