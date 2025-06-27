@@ -17,8 +17,16 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
           `}
         disabled={disabled}
-        {...props}>
-        {isLoading ? <LoadingSpinner /> : children}
+        {...props}
+      >
+        {isLoading && (
+          <div className="relative">
+            <div className="absolute inset-y-3 left-0 right-0 flex justify-center items-center z-30">
+              <LoadingSpinner />
+            </div>
+          </div>
+        )}
+        {children}
       </button>
     );
   }

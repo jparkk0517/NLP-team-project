@@ -1,63 +1,90 @@
 import { useCallback } from 'react';
-import Button from '../../../shared/Button';
-import useFrontStore from '../../../shared/frontStore';
-import { useQueryClient } from '@tanstack/react-query';
-import { useChat } from '../hook/useChat';
-import TextArea from '../../../shared/TextArea';
-import { useState } from 'react';
+import { Form } from 'antd';
+import useChatStore from '../../../shared/chatStore';
 import { useRef } from 'react';
 import { useEffect } from 'react';
 
 const ChatInput = () => {
-  const queryClient = useQueryClient();
-  const [message, setMessage] = useState('');
-  const { mutateAsync: chat, isPending } = useChat();
+  const [form] = Form.useForm();
   const textRef = useRef<HTMLTextAreaElement>(null);
-  const handleSubmit = useCallback(
-    async (e?: React.FormEvent<HTMLFormElement>) => {
-      e?.preventDefault();
-      try {
-        await chat(message);
-        queryClient.invalidateQueries({ queryKey: ['chatHistory'] });
-      } catch (error) {
-        console.error(error);
-      }
-      setMessage('');
-    },
-    [chat, message, queryClient]
-  );
-  const { inputable } = useFrontStore();
+  const queryClient = useQueryClient();
+  const { answer } = useRequest();
+  const  lastMessage  = useChatStore(state => state.lastMessage);
+  
+  // Form의 values를 감시하여 message 필드의 값을 가져옴
+  const messageValue = Form.useWatch('message', form);
+  const hasMessage = messageValue && messageValue.trim().length > 0;
+
+  const handleSubmit = useCallback(async () => {
+    const message = form.getFieldValue('message');
+    const lastMessageId = lastMessage.user?.id;
+    if (!lastMessageId || !hasMessage) return;
+    try {
+      await answer(lastMessageId, message);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ['chatHistory'] });
+      form.resetFields();
+    }
+  }, [answer, form, lastMessage, queryClient, hasMessage]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  }, [handleSubmit]);
 
   useEffect(() => {
-    if (inputable) {
+    if (lastMessage.user?.type === 'question') {
       textRef.current?.focus();
     }
-  }, [inputable]);
+  }, [lastMessage.user?.type]);
+
   return (
-    <form className='max-h-[100px] p-4 flex flex-row' onSubmit={handleSubmit}>
-      <TextArea
-        ref={textRef}
-        placeholder={inputable ? 'Action을 선택해주세요' : '메시지 입력'}
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        name='message'
-        className='w-[90%] h-full border-2 border-gray-300 rounded-md p-2'
-        disabled={!inputable}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && e.shiftKey) {
-            e.preventDefault();
-            handleSubmit();
-          }
-        }}
-      />
-      <Button
-        type='submit'
-        className={`w-[10%] min-w-[70px]`}
-        isLoading={isPending}
-        disabled={!inputable || message.length === 0}>
-        전송
-      </Button>
-    </form>
+    <Form
+    style={{margin:'24px'}}
+      form={form}
+      className="rounded-xl p-1 flex flex-col absolute bottom-0 bg-gray-100 border-2 border-gray-300 left-0 right-0"
+      onFinish={handleSubmit}
+    >
+      <div className="flex flex-col items-center w-full p-2">
+        <Form.Item name="message" className="flex-1" colon={false} noStyle>
+          <textarea
+            ref={textRef}
+            // disabled={!inputable}
+            placeholder={'메시지를 입력해주세요'}
+            onKeyDown={handleKeyDown}
+            className="w-full text-black text-shadow-none bg-transparent resize-none focus:ring-0 focus:outline-none focus:border-none mr-2 border-none shadow-none"
+          />
+        </Form.Item>
+        <div className="grid justify-end w-full h-full mt-2">
+          <button
+          style={{boxShadow: 'none'}}
+            type="submit"
+            className='bg-white rounded-full p-2 hover:bg-gray-200 cursor-pointer flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-100 shadow-none hover:shadow-none box-shadow-none'
+            disabled={ !hasMessage}
+          >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="lucide lucide-arrow-up"
+      >
+        <path d="m5 12 7-7 7 7" />
+        <path d="M12 19V5" />
+      </svg>
+          </button>
+        </div>
+      </div>
+    </Form>
   );
 };
 

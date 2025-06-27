@@ -6,6 +6,8 @@ export interface ChatHistoryDTO {
   speaker: SpeakerType;
   content: string;
   isLastMessageAnswer?: boolean;
+  persona?: PersonaDTO;
+  isLoading?: boolean;
 }
 export interface AnswerRequestDTO {
   questionId: string;

@@ -1,13 +1,12 @@
-import { useQueryClient } from '@tanstack/react-query';
-import type { ChatHistoryDTO } from '../../../shared/type';
-import Button from '../../../shared/Button';
-import { useRequest } from '../../../feature/chat/hook/useChat';
+import type { ChatHistoryDTO, PersonaDTO } from '../../../shared/type';
+import { useRef } from 'react';
 
 const UserIcon = () => {
   return (
-    <div className=''>
+    <div className="">
       <span
-        className={`text-black rounded-full p-2 w-[50px] h-[50px] flex items-center justify-center m-2 bg-green-300`}>
+        className={`text-black rounded-full p-2 w-[50px] h-[50px] flex items-center justify-center m-2 bg-green-300`}
+      >
         User
       </span>
     </div>
@@ -16,10 +15,11 @@ const UserIcon = () => {
 
 const AgentIcon = () => {
   return (
-    <div className=''>
+    <div className="">
       <span
-        className={`text-black rounded-full p-2 w-[50px] h-[50px] flex items-center justify-center m-2 bg-yellow-300`}>
-        Agent
+        className={`text-black rounded-full p-2 w-[50px] h-[50px] flex items-center justify-center m-2 bg-yellow-300`}
+      >
+        {persona?.name ?? 'Agent'}
       </span>
     </div>
   );
@@ -35,11 +35,18 @@ const Content = ({
   bottomContent?: React.ReactNode;
 }) => {
   return (
-    <div className='flex flex-col justify-end  max-w-[70%] '>
+    <div className={`flex flex-col justify-end max-w-[80%]
+          p-2 text-gray-500 rounded-md bg-gray-200 overflow-scroll
+          ${textAlign === 'right' ? 'flex-row-reverse' : ''}
+          scrollbar-hide
+          whitespace-pre-line
+          break-words`}
+      >
       <div
-        className={`p-2 text-gray-500 rounded-md bg-gray-200 p-2max-h-[300px] overflow-scroll ${
-          textAlign === 'right' ? 'flex-row-reverse' : ''
-        }`}>
+        className={`
+        ${textAlign === 'right' ? 'text-right' : 'text-left'}
+        `}
+      >
         {content}
       </div>
       {bottomContent}
@@ -47,79 +54,50 @@ const Content = ({
   );
 };
 
+const LoadingContent = () => {
+  return (
+    <div className="flex flex-col justify-end max-w-[80%] p-2 text-gray-500 rounded-md bg-gray-200">
+      <div className="flex items-center space-x-1">
+        <div className="flex space-x-1">
+          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
+          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+        </div>
+        <span className="text-sm text-gray-400 ml-2">응답을 생성하고 있습니다...</span>
+      </div>
+    </div>
+  );
+}
+
 const Message = ({
   id,
   speaker,
   content,
-  isLastMessageAnswer,
-}: ChatHistoryDTO) => {
-  const queryClient = useQueryClient();
-  const {
-    followUpQuestion,
-    bestAnswer,
-    nextQuestion,
-    isFollowUpQuestionPending,
-    isBestAnswerPending,
-    isNextQuestionPending,
-  } = useRequest();
+  // isLastMessage,
+  isLoading,
+  persona,
+}: ChatHistoryDTO & {
+  isLastMessage: boolean;
+}) => {
+  const messageRef = useRef<HTMLDivElement>(null);
+
   const isAgent = speaker === 'agent';
-  const handleAction = async (
-    type: 'followUpQuestion' | 'bestAnswer' | 'nextQuestion'
-  ) => {
-    try {
-      if (type === 'followUpQuestion') {
-        await followUpQuestion({ questionId: id });
-      } else if (type === 'bestAnswer') {
-        await bestAnswer({ questionId: id });
-      } else if (type === 'nextQuestion') {
-        await nextQuestion();
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      queryClient.invalidateQueries({ queryKey: ['chatHistory'] });
-    }
-  };
+
   return (
-    <div className='w-full items-center my-4'>
-      {isAgent ? (
+    <div className="w-full items-center my-4" ref={messageRef}>
+      { 
+      isAgent ? (
         <>
-          <div className='flex p-2'>
-            <AgentIcon />
-            <Content
-              content={content}
-              bottomContent={
-                isLastMessageAnswer ? (
-                  <div className='flex flex-row p-2'>
-                    <Button
-                      className='mr-2 '
-                      isLoading={isFollowUpQuestionPending}
-                      onClick={() => handleAction('followUpQuestion')}>
-                      꼬리질문
-                    </Button>
-                    <Button
-                      className='mr-2 '
-                      isLoading={isBestAnswerPending}
-                      onClick={() => handleAction('bestAnswer')}>
-                      모범답변
-                    </Button>
-                    <Button
-                      className='mr-2 '
-                      isLoading={isNextQuestionPending}
-                      onClick={() => handleAction('nextQuestion')}>
-                      다음질문
-                    </Button>
-                  </div>
-                ) : null
-              }
-            />
+          <div className="flex p-2">
+            <AgentIcon persona={persona} />
+            {isLoading ? <LoadingContent /> : <Content content={content} />}
           </div>
         </>
       ) : (
         <>
-          <div className='flex flex-row-reverse p-2 items-center'>
+          <div className="flex flex-row-reverse p-2 items-center">
             <UserIcon />
-            <Content content={content} textAlign='right' />
+            <Content content={content} textAlign="right" />
           </div>
         </>
       )}

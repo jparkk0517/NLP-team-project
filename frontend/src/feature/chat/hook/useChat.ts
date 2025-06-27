@@ -1,54 +1,71 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
-import useFrontStore from '../../../shared/frontStore';
-import type { ChatHistoryDTO } from '../../../shared/type';
+import { useCallback, useEffect } from 'react';
+import useChatStore from '../../../shared/chatStore';
+import { Api } from '../../../shared/Api';
+import type {
+  ChatHistoryDTO,
+  ContentType,
+  RequestInputDTO,
+} from '../../../shared/type';
+import { useShallow } from 'zustand/shallow';
 
 const mockData = [] as ChatHistoryDTO[];
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error
 window.mockData = mockData;
 const useChatHistory = () => {
+  const { chatHistory, setChatHistory, setLastMessage } = useChatStore(
+    useShallow(state => ({
+      chatHistory: state.chatHistory,
+      setChatHistory: state.setChatHistory,
+      setLastMessage: state.setLastMessage,
+    }))
+  );
   const res = useQuery({
     queryKey: ['chatHistory'],
     queryFn: async () => {
       return await [...mockData];
     },
   });
-  const { setInputable } = useFrontStore();
+
   useEffect(() => {
-    const lastMessage = res.data?.[res.data.length - 1];
-    setInputable(
-      !!lastMessage &&
-        lastMessage.speaker === 'agent' &&
-        lastMessage.type === 'question'
-    );
-  }, [res.data, setInputable]);
-  return {
-    ...res,
-    data: res.data?.map((data, id) => ({
-      ...data,
-      isLastMessageAnswer:
-        data.speaker === 'agent' &&
-        ['answer', 'modelAnswer'].includes(data.type) &&
-        id === res.data.length - 1,
-    })),
-  };
+    setChatHistory(res.data ?? []);
+    const reversedData = res.data?.reverse();
+    setLastMessage({
+      agent: reversedData?.find(item => item.speaker === 'agent') ?? null,
+      user: reversedData?.find(item => item.speaker === 'user') ?? null,
+    });
+  }, [res.data, setChatHistory, setLastMessage]);
+
+  return chatHistory;
 };
 
 const useRequest = () => {
-  const {
-    mutateAsync: followUpQuestion,
-    isPending: isFollowUpQuestionPending,
-  } = useMutation({
-    mutationFn: async ({ questionId }: { questionId: string }) => {
-      mockData.push({
-        id: mockData.length.toString(),
-        type: 'question',
-        speaker: 'agent',
-        content: `${questionId} 에 대한 꼬리질문`,
-      });
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return await Promise.resolve(null);
+  const { setChatHistory, chatHistory } = useChatStore(
+    useShallow(state => ({
+      setChatHistory: state.setChatHistory,
+      chatHistory: state.chatHistory,
+    }))
+  );
+  const { mutateAsync } = useMutation({
+    mutationFn: async (data: RequestInputDTO) => {
+      setChatHistory([
+        ...chatHistory,
+        {
+          type: data.type as ContentType,
+          content: data.content,
+          id: '',
+          speaker: 'user',
+        },
+        {
+          type: 'answer' as ContentType,
+          content: 'isLoading',
+          id: '',
+          speaker: 'agent',
+          isLoading: true,
+        },
+      ]);
+      return await Api.POST<RequestInputDTO, ChatHistoryDTO[]>('/', data);
     },
   });
 
@@ -75,15 +92,44 @@ const useRequest = () => {
           speaker: 'agent',
           content: '새로운 질문입니다.',
         });
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        return await Promise.resolve(null);
-      },
-    });
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [mutateAsync]
+  );
+
+  const nextQuestion = useCallback(async () => {
+    try {
+      await mutateAsync({
+        type: 'question',
+        content: '다음질문 해줘',
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  }, [mutateAsync]);
+
+  const answer = useCallback(
+    async (questionId: string, content: string) => {
+      try {
+        await mutateAsync({
+          type: 'answer',
+          content,
+          related_chatting_id: questionId,
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [mutateAsync]
+  );
+
   return {
-    followUpQuestion,
+    // followUpQuestion,
     bestAnswer,
     nextQuestion,
-    isFollowUpQuestionPending,
+    // isFollowUpQuestionPending,
     isBestAnswerPending,
     isNextQuestionPending,
   };
